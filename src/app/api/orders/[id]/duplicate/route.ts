@@ -150,11 +150,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           // Route
           origin: originalOrder.origin,
           originCity: originalOrder.originCity,
-          originPostalCode: originalOrder.originPostalCode,
           originCountry: originalOrder.originCountry,
           destination: originalOrder.destination,
           destinationCity: originalOrder.destinationCity,
-          destinationPostalCode: originalOrder.destinationPostalCode,
           destinationCountry: originalOrder.destinationCountry,
           distanceKm: originalOrder.distanceKm,
           // New dates

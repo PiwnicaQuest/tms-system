@@ -27,8 +27,7 @@ export type AuditEntityType =
   | "User"
   | "DailyWorkRecord"
   | "Webhook"
-  | "Settings"
-  | "RecurringOrder";
+  | "Settings";
 
 export interface AuditLogParams {
   tenantId: string;
@@ -277,5 +276,4 @@ export const entityTypeLabels: Record<AuditEntityType, string> = {
   DailyWorkRecord: "Rekord pracy",
   Webhook: "Webhook",
   Settings: "Ustawienia",
-  RecurringOrder: "Zlecenie cykliczne",
 };

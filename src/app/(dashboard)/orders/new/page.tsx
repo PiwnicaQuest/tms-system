@@ -37,8 +37,6 @@ import {
   Users,
   Trash2,
   Percent,
-  Route,
-  Clock,
 } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import {
@@ -97,11 +95,9 @@ interface FormData {
   trailerId: string;
   origin: string;
   originCity: string;
-  originPostalCode: string;
   originCountry: string;
   destination: string;
   destinationCity: string;
-  destinationPostalCode: string;
   destinationCountry: string;
   distanceKm: string;
   loadingDate: string;
@@ -138,11 +134,9 @@ const initialFormData: FormData = {
   trailerId: "none",
   origin: "",
   originCity: "",
-  originPostalCode: "",
   originCountry: "PL",
   destination: "",
   destinationCity: "",
-  destinationPostalCode: "",
   destinationCountry: "PL",
   distanceKm: "",
   loadingDate: "",
@@ -200,14 +194,6 @@ export default function NewOrderPage() {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [assignments, setAssignments] = useState<PlannedAssignment[]>([]);
-  const [calculatingDistance, setCalculatingDistance] = useState(false);
-  const [routeInfo, setRouteInfo] = useState<{
-    durationMinutes: number;
-    originLabel: string;
-    destinationLabel: string;
-  } | null>(null);
-  // Waypoints state
-  const [waypoints, setWaypoints] = useState<Array<{address: string; city: string; country: string}>>([]);
 
   // Resources
   const [contractors, setContractors] = useState<Contractor[]>([]);
@@ -404,20 +390,6 @@ export default function NewOrderPage() {
     );
   };
 
-
-  // Waypoint management functions
-  const addWaypoint = () => {
-    setWaypoints(prev => [...prev, { address: "", city: "", country: "PL" }]);
-  };
-
-  const removeWaypoint = (index: number) => {
-    setWaypoints(prev => prev.filter((_, i) => i !== index));
-  };
-
-  const updateWaypoint = (index: number, field: "address" | "city" | "country", value: string) => {
-    setWaypoints(prev => prev.map((wp, i) => i === index ? { ...wp, [field]: value } : wp));
-  };
-
   // Get driver/vehicle/trailer names for display
   const getDriverName = (driverId: string) => {
     const driver = drivers.find((d) => d.id === driverId);
@@ -432,65 +404,6 @@ export default function NewOrderPage() {
   const getTrailerName = (trailerId: string) => {
     const trailer = trailers.find((t) => t.id === trailerId);
     return trailer ? trailer.registrationNumber : "Nieprzypisana";
-  };
-
-  // Calculate distance using OpenRouteService
-  const calculateDistance = async () => {
-    if (!formData.origin || !formData.destination) {
-      setErrors((prev) => ({
-        ...prev,
-        distance: "Wprowadz adresy zaladunku i rozladunku",
-      }));
-      return;
-    }
-
-    setCalculatingDistance(true);
-    setErrors((prev) => ({ ...prev, distance: "" }));
-    setRouteInfo(null);
-
-    try {
-      const response = await fetch("/api/routes/calculate-distance", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          origin: `${formData.origin}, ${formData.originPostalCode || ""} ${formData.originCity || ""}, ${formData.originCountry}`.trim(),
-          destination: `${formData.destination}, ${formData.destinationPostalCode || ""} ${formData.destinationCity || ""}, ${formData.destinationCountry}`.trim(),
-          originCountry: formData.originCountry,
-          destinationCountry: formData.destinationCountry,
-          waypoints: waypoints.filter(wp => wp.address.trim()).map(wp => ({
-            address: `${wp.address}, ${wp.city || ''}, ${wp.country}`.trim(),
-            country: wp.country || 'PL',
-          })),
-          profile: 'driving-hgv',
-        }),
-      });
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || "Blad obliczania dystansu");
-      }
-
-      const data = await response.json();
-
-      setFormData((prev) => ({
-        ...prev,
-        distanceKm: String(data.distanceKm),
-      }));
-
-      setRouteInfo({
-        durationMinutes: data.durationMinutes,
-        originLabel: data.origin.label,
-        destinationLabel: data.destination.label,
-      });
-    } catch (error) {
-      console.error("Error calculating distance:", error);
-      setErrors((prev) => ({
-        ...prev,
-        distance: error instanceof Error ? error.message : "Blad obliczania dystansu",
-      }));
-    } finally {
-      setCalculatingDistance(false);
-    }
   };
 
   // Validate form
@@ -581,13 +494,6 @@ export default function NewOrderPage() {
           trailerId: primaryAssignment?.trailerId || (formData.trailerId && formData.trailerId !== "none" ? formData.trailerId : null),
           // Multi-assignment array
           assignments: apiAssignments.length > 0 ? apiAssignments : undefined,
-          waypoints: waypoints.filter(wp => wp.address.trim()).map((wp, index) => ({
-            sequence: index + 1,
-            type: "STOP",
-            address: wp.address,
-            city: wp.city || null,
-            country: wp.country || "PL",
-          })),
         }),
       });
 
@@ -912,17 +818,6 @@ export default function NewOrderPage() {
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="originPostalCode">Kod pocztowy</Label>
-                      <Input
-                        id="originPostalCode"
-                        name="originPostalCode"
-                        value={formData.originPostalCode}
-                        onChange={handleChange}
-                        placeholder="00-000"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
                       <Label htmlFor="originCountry">Kraj</Label>
                       <Select
                         value={formData.originCountry}
@@ -988,88 +883,6 @@ export default function NewOrderPage() {
 
                 <Separator />
 
-                
-                {/* Waypoints */}
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-semibold text-blue-600 flex items-center gap-2">
-                      <Route className="h-4 w-4" />
-                      Punkty posrednie (opcjonalne)
-                    </h3>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={addWaypoint}
-                    >
-                      <Plus className="h-4 w-4 mr-1" />
-                      Dodaj punkt
-                    </Button>
-                  </div>
-                  
-                  {waypoints.length > 0 && (
-                    <div className="space-y-3">
-                      {waypoints.map((wp, index) => (
-                        <div key={index} className="flex items-start gap-3 p-3 border rounded-lg bg-muted/30">
-                          <div className="flex items-center justify-center w-6 h-6 rounded-full bg-blue-100 text-blue-600 text-xs font-medium">
-                            {index + 1}
-                          </div>
-                          <div className="flex-1 grid gap-3 md:grid-cols-4">
-                            <div className="md:col-span-2">
-                              <Input
-                                placeholder="Adres"
-                                value={wp.address}
-                                onChange={(e) => updateWaypoint(index, "address", e.target.value)}
-                              />
-                            </div>
-                            <div>
-                              <Input
-                                placeholder="Miasto"
-                                value={wp.city}
-                                onChange={(e) => updateWaypoint(index, "city", e.target.value)}
-                              />
-                            </div>
-                            <div>
-                              <Select
-                                value={wp.country}
-                                onValueChange={(value) => updateWaypoint(index, "country", value)}
-                              >
-                                <SelectTrigger>
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {countries.map((country) => (
-                                    <SelectItem key={country.code} value={country.code}>
-                                      {country.name}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                          </div>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
-                            onClick={() => removeWaypoint(index)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  
-                  {waypoints.length === 0 && (
-                    <p className="text-sm text-muted-foreground">
-                      Mozesz dodac punkty posrednie trasy, ktore zostana uwzglednione w obliczeniu dystansu.
-                    </p>
-                  )}
-                </div>
-
-                <Separator />
-
                 {/* Unloading */}
                 <div className="space-y-4">
                   <h3 className="font-semibold text-red-600 flex items-center gap-2">
@@ -1115,17 +928,6 @@ export default function NewOrderPage() {
                         value={formData.destinationCity}
                         onChange={handleChange}
                         placeholder="Miasto"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="destinationPostalCode">Kod pocztowy</Label>
-                      <Input
-                        id="destinationPostalCode"
-                        name="destinationPostalCode"
-                        value={formData.destinationPostalCode}
-                        onChange={handleChange}
-                        placeholder="00-000"
                       />
                     </div>
 
@@ -1195,61 +997,17 @@ export default function NewOrderPage() {
 
                 <Separator />
 
-                <div className="space-y-4">
-                  <div className="flex items-end gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="distanceKm">Dystans (km)</Label>
-                      <Input
-                        id="distanceKm"
-                        name="distanceKm"
-                        type="number"
-                        value={formData.distanceKm}
-                        onChange={handleChange}
-                        placeholder="0"
-                        className="w-[200px]"
-                      />
-                    </div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={calculateDistance}
-                      disabled={calculatingDistance || !formData.origin || !formData.destination}
-                    >
-                      {calculatingDistance ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      ) : (
-                        <Route className="mr-2 h-4 w-4" />
-                      )}
-                      Oblicz dystans
-                    </Button>
-                  </div>
-
-                  {errors.distance && (
-                    <p className="text-sm text-destructive">{errors.distance}</p>
-                  )}
-
-                  {routeInfo && (
-                    <div className="p-4 bg-muted rounded-lg space-y-2">
-                      <div className="flex items-center gap-2 text-sm">
-                        <Clock className="h-4 w-4 text-muted-foreground" />
-                        <span>
-                          Szacowany czas przejazdu:{" "}
-                          <strong>
-                            {Math.floor(routeInfo.durationMinutes / 60)}h{" "}
-                            {Math.round(routeInfo.durationMinutes % 60)}min
-                          </strong>
-                        </span>
-                      </div>
-                      <div className="text-xs text-muted-foreground space-y-1">
-                        <p>
-                          <span className="text-green-600">●</span> {routeInfo.originLabel}
-                        </p>
-                        <p>
-                          <span className="text-red-600">●</span> {routeInfo.destinationLabel}
-                        </p>
-                      </div>
-                    </div>
-                  )}
+                <div className="space-y-2">
+                  <Label htmlFor="distanceKm">Dystans (km)</Label>
+                  <Input
+                    id="distanceKm"
+                    name="distanceKm"
+                    type="number"
+                    value={formData.distanceKm}
+                    onChange={handleChange}
+                    placeholder="0"
+                    className="max-w-[200px]"
+                  />
                 </div>
               </CardContent>
             </Card>

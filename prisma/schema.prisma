@@ -46,7 +46,7 @@ model Tenant {
   webhooks          Webhook[]
   auditLogs         AuditLog[]
   orderAssignments  OrderAssignment[]
-  recurringOrders   RecurringOrder[]
+  notes             Note[]
 }
 
 // Ustawienia faktur per tenant
@@ -121,7 +121,14 @@ model User {
   auditLogs     AuditLog[]
   pushTokens    PushToken[]
   orderPhotos   OrderPhoto[]
-  createdRecurringOrders RecurringOrder[]
+
+  // Notes relations
+  notes           Note[]          @relation("NoteAuthor")
+  noteRecipients  NoteRecipient[]
+  noteReads       NoteRead[]
+  noteReactions   NoteReaction[]
+  noteComments    NoteComment[]
+  noteMentions    NoteMention[]
 
   @@index([tenantId])
   @@index([email])
@@ -216,8 +223,7 @@ model Vehicle {
   dailyWorkRecords  DailyWorkRecord[]
   vehicleMonthlyReports VehicleMonthlyReport[]
   fuelRecords       FuelRecord[]
-  orderAssignments  OrderAssignment[]
-  photos            VehiclePhoto[]
+  orderAssignments  OrderAssignment[]  // Przypisania do zleceń
 
   @@unique([tenantId, registrationNumber])
   @@index([tenantId])
@@ -275,8 +281,7 @@ model Trailer {
   // Relations
   orders            Order[]
   documents         Document[]
-  orderAssignments  OrderAssignment[]
-  photos            TrailerPhoto[]
+  orderAssignments  OrderAssignment[]  // Przypisania do zleceń
 
   @@unique([tenantId, registrationNumber])
   @@index([tenantId])
@@ -345,7 +350,7 @@ model Driver {
   documents         Document[]
   dailyWorkRecords  DailyWorkRecord[]
   driverMonthlyReports DriverMonthlyReport[]
-  orderAssignments  OrderAssignment[]
+  orderAssignments  OrderAssignment[]  // Przypisania do zleceń
 
   @@index([tenantId])
   @@index([status])
@@ -399,11 +404,9 @@ model Order {
   // Route
   origin             String
   originCity         String?
-  originPostalCode   String?
   originCountry      String @default("PL")
   destination        String
   destinationCity    String?
-  destinationPostalCode String?
   destinationCountry String @default("PL")
   distanceKm         Float?
 
@@ -752,12 +755,6 @@ model Invoice {
   grossAmount     Float
   currency        String @default("PLN")
 
-  // Exchange rate (for foreign currencies)
-  exchangeRate      Float?
-  exchangeRateDate  DateTime?
-  exchangeRateTable String?
-  amountPln         Float?
-
   // Payment
   paymentMethod   PaymentMethod @default(TRANSFER)
   bankAccount     String?
@@ -933,7 +930,6 @@ model Contractor {
   orders       Order[] @relation("OrderContractor")
   subOrders    Order[] @relation("OrderSubcontractor")
   invoices     Invoice[]
-  recurringOrders RecurringOrder[]
 
   @@index([tenantId])
   @@index([nip])
@@ -1215,102 +1211,183 @@ model PushToken {
   @@index([userId])
 }
 
-// Zdjęcia pojazdów
-model VehiclePhoto {
-  id          String   @id @default(cuid())
-  vehicleId   String
-  vehicle     Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
-  url         String
-  description String?
-  isPrimary   Boolean  @default(false)
-  uploadedBy  String?
-  createdAt   DateTime @default(now())
+// ==================== NOTES / INTERNAL COMMUNICATION ====================
 
-  @@index([vehicleId])
+enum NoteType {
+  GENERAL       // Ogolna notatka
+  ANNOUNCEMENT  // Ogloszenie (tylko admin)
+  PRIVATE       // Prywatna (dla wybranych osob)
+  ENTITY_LINKED // Powiazana z obiektem (Order, Vehicle, etc.)
 }
 
-// Zdjęcia naczep
-model TrailerPhoto {
-  id          String   @id @default(cuid())
-  trailerId   String
-  trailer     Trailer  @relation(fields: [trailerId], references: [id], onDelete: Cascade)
-  url         String
-  description String?
-  isPrimary   Boolean  @default(false)
-  uploadedBy  String?
-  createdAt   DateTime @default(now())
-
-  @@index([trailerId])
+enum NotePriority {
+  LOW      // Informacyjna
+  NORMAL   // Normalna
+  HIGH     // Wazna
+  URGENT   // Pilna
 }
 
-// ==================== RECURRING ORDERS ====================
-
-enum RecurringFrequency {
-  DAILY
-  WEEKLY
-  BIWEEKLY
-  MONTHLY
+enum NoteCategory {
+  OPERATIONS  // Operacje
+  FLEET       // Flota
+  CLIENTS     // Klienci
+  HR          // Kadry
+  FINANCE     // Finanse
+  GENERAL     // Ogolne
+  OTHER       // Inne
 }
 
-// Zlecenia cykliczne - szablony
-model RecurringOrder {
-  id                    String   @id @default(cuid())
-  tenantId              String
-  tenant                Tenant   @relation(fields: [tenantId], references: [id])
-  
-  // Nazwa szablonu
-  name                  String
-  
-  // Harmonogram
-  frequency             RecurringFrequency
-  dayOfWeek             Int?     // 0-6 dla WEEKLY/BIWEEKLY (0 = niedziela)
-  dayOfMonth            Int?     // 1-31 dla MONTHLY
-  startDate             DateTime
-  endDate               DateTime?
-  nextGenerationDate    DateTime
-  
-  // Dane zlecenia (szablon)
-  type                  OrderType @default(OWN)
-  contractorId          String?
-  contractor            Contractor? @relation(fields: [contractorId], references: [id])
-  
-  origin                String
-  originCity            String?
-  originPostalCode      String?
-  originCountry         String   @default("PL")
-  destination           String
-  destinationCity       String?
-  destinationPostalCode String?
-  destinationCountry    String   @default("PL")
-  distanceKm            Float?
-  
-  loadingTimeFrom       String?
-  loadingTimeTo         String?
-  unloadingTimeFrom     String?
-  unloadingTimeTo       String?
-  
-  cargoDescription      String?
-  cargoWeight           Float?
-  cargoVolume           Float?
-  cargoPallets          Int?
-  requiresAdr           Boolean  @default(false)
-  
-  priceNet              Float?
-  currency              String   @default("PLN")
-  
-  notes                 String?
-  internalNotes         String?
-  
-  // Status
-  isActive              Boolean  @default(true)
-  generatedOrdersCount  Int      @default(0)
-  lastGeneratedAt       DateTime?
-  
-  createdById           String?
-  createdBy             User?    @relation(fields: [createdById], references: [id])
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
-  
+enum ReactionType {
+  LIKE
+  HEART
+  THUMBS_UP
+  THUMBS_DOWN
+  CHECK
+  QUESTION
+}
+
+model Note {
+  id              String        @id @default(cuid())
+  tenantId        String
+  tenant          Tenant        @relation(fields: [tenantId], references: [id])
+
+  authorId        String
+  author          User          @relation("NoteAuthor", fields: [authorId], references: [id])
+
+  title           String?
+  content         String        @db.Text
+  type            NoteType      @default(GENERAL)
+  priority        NotePriority  @default(NORMAL)
+  category        NoteCategory  @default(GENERAL)
+
+  isPinned        Boolean       @default(false)
+  isArchived      Boolean       @default(false)
+
+  // Entity linking (optional)
+  entityType      String?       // "Order", "Vehicle", "Driver", etc.
+  entityId        String?
+
+  // Expiration (optional for announcements)
+  expiresAt       DateTime?
+
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  // Relations
+  recipients      NoteRecipient[]
+  readBy          NoteRead[]
+  reactions       NoteReaction[]
+  comments        NoteComment[]
+  attachments     NoteAttachment[]
+  mentions        NoteMention[]
+
   @@index([tenantId])
-  @@index([isActive, nextGenerationDate])
+  @@index([authorId])
+  @@index([type])
+  @@index([priority])
+  @@index([category])
+  @@index([isPinned])
+  @@index([isArchived])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+// Recipients for PRIVATE notes
+model NoteRecipient {
+  id        String   @id @default(cuid())
+  noteId    String
+  note      Note     @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@unique([noteId, userId])
+  @@index([noteId])
+  @@index([userId])
+}
+
+// Track who has read a note
+model NoteRead {
+  id        String   @id @default(cuid())
+  noteId    String
+  note      Note     @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  readAt    DateTime @default(now())
+
+  @@unique([noteId, userId])
+  @@index([noteId])
+  @@index([userId])
+}
+
+// Reactions on notes
+model NoteReaction {
+  id        String       @id @default(cuid())
+  noteId    String
+  note      Note         @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User         @relation(fields: [userId], references: [id])
+  type      ReactionType
+  createdAt DateTime     @default(now())
+
+  @@unique([noteId, userId, type])
+  @@index([noteId])
+  @@index([userId])
+}
+
+// Comments on notes
+model NoteComment {
+  id        String   @id @default(cuid())
+  noteId    String
+  note      Note     @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id])
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([noteId])
+  @@index([authorId])
+}
+
+// Attachments for notes
+model NoteAttachment {
+  id        String   @id @default(cuid())
+  noteId    String
+  note      Note     @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  fileName  String
+  fileUrl   String
+  fileSize  Int?
+  mimeType  String?
+  createdAt DateTime @default(now())
+
+  @@index([noteId])
+}
+
+// Mentions (@user) in notes
+model NoteMention {
+  id        String   @id @default(cuid())
+  noteId    String
+  note      Note     @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@unique([noteId, userId])
+  @@index([noteId])
+  @@index([userId])
+}
+
+// Note templates for quick creation
+model NoteTemplate {
+  id        String       @id @default(cuid())
+  tenantId  String
+  name      String
+  content   String       @db.Text
+  category  NoteCategory @default(GENERAL)
+  isActive  Boolean      @default(true)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@index([tenantId])
 }

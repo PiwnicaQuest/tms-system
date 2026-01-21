@@ -7,7 +7,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Table,
   TableBody,
@@ -29,7 +28,6 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
-  DialogDescription,
 } from "@/components/ui/dialog";
 import {
   DropdownMenu,
@@ -37,11 +35,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import {
   Users,
   Plus,
@@ -53,13 +46,10 @@ import {
   Mail,
   Calendar,
   AlertTriangle,
+  Truck,
   Pencil,
+  Trash2,
   Loader2,
-  UserX,
-  UserCheck,
-  ChevronDown,
-  ChevronRight,
-  StickyNote,
 } from "lucide-react";
 
 // Types matching Prisma schema
@@ -110,7 +100,6 @@ interface DriverFormData {
   licenseCategories: string;
   medicalExpiry: string;
   status: DriverStatus;
-  notes: string;
 }
 
 // Status configuration
@@ -156,21 +145,6 @@ function formatDate(dateString: string | null): string {
   return new Date(dateString).toISOString().split("T")[0];
 }
 
-function formatDisplayDate(dateString: string | null): string {
-  if (!dateString) return "-";
-  return new Date(dateString).toLocaleDateString("pl-PL");
-}
-
-function formatNoteDate(): string {
-  return new Date().toLocaleDateString("pl-PL", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
 const emptyFormData: DriverFormData = {
   firstName: "",
   lastName: "",
@@ -186,14 +160,11 @@ const emptyFormData: DriverFormData = {
   licenseCategories: "",
   medicalExpiry: "",
   status: "ACTIVE",
-  notes: "",
 };
 
 export default function DriversPage() {
   const [drivers, setDrivers] = useState<Driver[]>([]);
-  const [terminatedDrivers, setTerminatedDrivers] = useState<Driver[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadingTerminated, setLoadingTerminated] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -201,42 +172,18 @@ export default function DriversPage() {
   const [formData, setFormData] = useState<DriverFormData>(emptyFormData);
   const [submitting, setSubmitting] = useState(false);
 
-  // Termination dialog state
-  const [terminationDialogOpen, setTerminationDialogOpen] = useState(false);
-  const [driverToTerminate, setDriverToTerminate] = useState<Driver | null>(null);
-  const [terminationDate, setTerminationDate] = useState(formatDate(new Date().toISOString()));
-  const [terminationNote, setTerminationNote] = useState("");
-  const [terminating, setTerminating] = useState(false);
-
-  // Restore dialog state
-  const [restoreDialogOpen, setRestoreDialogOpen] = useState(false);
-  const [driverToRestore, setDriverToRestore] = useState<Driver | null>(null);
-  const [restoreNote, setRestoreNote] = useState("");
-  const [restoring, setRestoring] = useState(false);
-
-  // Terminated section expanded state
-  const [terminatedExpanded, setTerminatedExpanded] = useState(false);
-
-  // Fetch active drivers
   const fetchDrivers = useCallback(async () => {
     try {
       setLoading(true);
       const params = new URLSearchParams();
       if (searchQuery) params.set("search", searchQuery);
-      // Filter out TERMINATED drivers
-      if (statusFilter && statusFilter !== "all") {
-        params.set("status", statusFilter);
-      }
+      if (statusFilter && statusFilter !== "all") params.set("status", statusFilter);
       params.set("limit", "100");
 
       const response = await fetch(`/api/drivers?${params.toString()}`);
       if (response.ok) {
         const result = await response.json();
-        // Filter out terminated drivers on client side as well
-        const activeDrivers = (result.data || []).filter(
-          (d: Driver) => d.status !== "TERMINATED"
-        );
-        setDrivers(activeDrivers);
+        setDrivers(result.data || []);
       }
     } catch (error) {
       console.error("Error fetching drivers:", error);
@@ -245,30 +192,9 @@ export default function DriversPage() {
     }
   }, [searchQuery, statusFilter]);
 
-  // Fetch terminated drivers
-  const fetchTerminatedDrivers = useCallback(async () => {
-    try {
-      setLoadingTerminated(true);
-      const params = new URLSearchParams();
-      params.set("status", "TERMINATED");
-      params.set("limit", "100");
-
-      const response = await fetch(`/api/drivers?${params.toString()}`);
-      if (response.ok) {
-        const result = await response.json();
-        setTerminatedDrivers(result.data || []);
-      }
-    } catch (error) {
-      console.error("Error fetching terminated drivers:", error);
-    } finally {
-      setLoadingTerminated(false);
-    }
-  }, []);
-
   useEffect(() => {
     fetchDrivers();
-    fetchTerminatedDrivers();
-  }, [fetchDrivers, fetchTerminatedDrivers]);
+  }, [fetchDrivers]);
 
   const handleNew = () => {
     setEditingDriver(null);
@@ -293,107 +219,29 @@ export default function DriversPage() {
       licenseCategories: driver.licenseCategories || "",
       medicalExpiry: formatDate(driver.medicalExpiry),
       status: driver.status,
-      notes: driver.notes || "",
     });
     setDialogOpen(true);
   };
 
-  // Open termination dialog
-  const handleTerminateClick = (driver: Driver) => {
-    setDriverToTerminate(driver);
-    setTerminationDate(formatDate(new Date().toISOString()));
-    setTerminationNote("");
-    setTerminationDialogOpen(true);
-  };
-
-  // Execute termination
-  const handleTerminate = async () => {
-    if (!driverToTerminate) return;
-
-    setTerminating(true);
-    try {
-      // Build updated notes with termination info
-      const existingNotes = driverToTerminate.notes || "";
-      const terminationEntry = `[${formatNoteDate()}] ZWOLNIENIE: ${terminationNote || "Brak podanego powodu"}`;
-      const updatedNotes = existingNotes
-        ? `${terminationEntry}\n\n${existingNotes}`
-        : terminationEntry;
-
-      const response = await fetch(`/api/drivers/${driverToTerminate.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status: "TERMINATED",
-          terminationDate: terminationDate,
-          isActive: false,
-          notes: updatedNotes,
-        }),
-      });
-
-      if (response.ok) {
-        setTerminationDialogOpen(false);
-        setDriverToTerminate(null);
-        setTerminationNote("");
-        fetchDrivers();
-        fetchTerminatedDrivers();
-      } else {
-        const error = await response.json();
-        alert(error.error || "Błąd podczas zwalniania kierowcy");
-      }
-    } catch (error) {
-      console.error("Error terminating driver:", error);
-      alert("Błąd podczas zwalniania kierowcy");
-    } finally {
-      setTerminating(false);
+  const handleDelete = async (driver: Driver) => {
+    if (!confirm(`Czy na pewno chcesz dezaktywować kierowcę ${driver.firstName} ${driver.lastName}?`)) {
+      return;
     }
-  };
 
-  // Open restore dialog
-  const handleRestoreClick = (driver: Driver) => {
-    setDriverToRestore(driver);
-    setRestoreNote("");
-    setRestoreDialogOpen(true);
-  };
-
-  // Execute restore
-  const handleRestore = async () => {
-    if (!driverToRestore) return;
-
-    setRestoring(true);
     try {
-      // Build updated notes with restore info
-      const existingNotes = driverToRestore.notes || "";
-      const restoreEntry = `[${formatNoteDate()}] PRZYWROCENIE: ${restoreNote || "Przywrócony do pracy"}`;
-      const updatedNotes = existingNotes
-        ? `${restoreEntry}\n\n${existingNotes}`
-        : restoreEntry;
-
-      const response = await fetch(`/api/drivers/${driverToRestore.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status: "ACTIVE",
-          terminationDate: null,
-          isActive: true,
-          notes: updatedNotes,
-        }),
+      const response = await fetch(`/api/drivers/${driver.id}`, {
+        method: "DELETE",
       });
 
       if (response.ok) {
-        setRestoreDialogOpen(false);
-        setDriverToRestore(null);
-        setRestoreNote("");
         fetchDrivers();
-        fetchTerminatedDrivers();
       } else {
         const error = await response.json();
-        alert(error.error || "Błąd podczas przywracania kierowcy");
+        alert(error.error || "Błąd podczas usuwania kierowcy");
       }
     } catch (error) {
-      console.error("Error restoring driver:", error);
-      alert("Błąd podczas przywracania kierowcy");
-    } finally {
-      setRestoring(false);
+      console.error("Error deleting driver:", error);
+      alert("Błąd podczas usuwania kierowcy");
     }
   };
 
@@ -412,7 +260,6 @@ export default function DriversPage() {
         licenseExpiry: formData.licenseExpiry || null,
         licenseCategories: formData.licenseCategories || null,
         medicalExpiry: formData.medicalExpiry || null,
-        notes: formData.notes || null,
       };
 
       const url = editingDriver
@@ -429,7 +276,6 @@ export default function DriversPage() {
       if (response.ok) {
         setDialogOpen(false);
         fetchDrivers();
-        fetchTerminatedDrivers();
       } else {
         const error = await response.json();
         alert(error.error || "Błąd podczas zapisywania kierowcy");
@@ -444,11 +290,10 @@ export default function DriversPage() {
 
   // Stats calculation
   const stats = {
-    total: drivers.length + terminatedDrivers.length,
+    total: drivers.length,
     active: drivers.filter((d) => d.status === "ACTIVE").length,
     onLeave: drivers.filter((d) => d.status === "ON_LEAVE").length,
     sick: drivers.filter((d) => d.status === "SICK").length,
-    terminated: terminatedDrivers.length,
   };
 
   return (
@@ -471,7 +316,7 @@ export default function DriversPage() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-5">
+      <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm text-muted-foreground">
@@ -515,17 +360,6 @@ export default function DriversPage() {
             <p className="text-2xl font-bold">{stats.sick}</p>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground flex items-center gap-2">
-              <div className="h-2 w-2 rounded-full bg-red-500" />
-              Zwolnieni
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{stats.terminated}</p>
-          </CardContent>
-        </Card>
       </div>
 
       {/* Filters */}
@@ -560,13 +394,10 @@ export default function DriversPage() {
         </CardContent>
       </Card>
 
-      {/* Active Drivers Table */}
+      {/* Drivers Table */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <UserCheck className="h-5 w-5 text-emerald-500" />
-            Aktywni kierowcy ({drivers.length})
-          </CardTitle>
+          <CardTitle>Lista kierowców</CardTitle>
         </CardHeader>
         <CardContent>
           {loading ? (
@@ -602,17 +433,12 @@ export default function DriversPage() {
                           </span>
                         </div>
                         <div>
-                          <div className="flex items-center gap-2">
-                            <Link
-                              href={`/drivers/${driver.id}`}
-                              className="font-medium hover:underline"
-                            >
-                              {driver.firstName} {driver.lastName}
-                            </Link>
-                            {driver.notes && (
-                              <span title="Posiada notatki"><StickyNote className="h-3 w-3 text-amber-500" /></span>
-                            )}
-                          </div>
+                          <Link
+                            href={`/drivers/${driver.id}`}
+                            className="font-medium hover:underline"
+                          >
+                            {driver.firstName} {driver.lastName}
+                          </Link>
                           {driver.city && (
                             <p className="text-sm text-muted-foreground">
                               {driver.city}
@@ -710,11 +536,11 @@ export default function DriversPage() {
                             Edytuj
                           </DropdownMenuItem>
                           <DropdownMenuItem
-                            onClick={() => handleTerminateClick(driver)}
+                            onClick={() => handleDelete(driver)}
                             className="text-red-600"
                           >
-                            <UserX className="mr-2 h-4 w-4" />
-                            Zwolnij
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Dezaktywuj
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -726,143 +552,6 @@ export default function DriversPage() {
           )}
         </CardContent>
       </Card>
-
-      {/* Terminated Drivers Section */}
-      <Collapsible open={terminatedExpanded} onOpenChange={setTerminatedExpanded}>
-        <Card>
-          <CollapsibleTrigger asChild>
-            <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors">
-              <CardTitle className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <UserX className="h-5 w-5 text-red-500" />
-                  Zwolnieni kierowcy ({terminatedDrivers.length})
-                </div>
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <span className="text-sm font-normal">
-                    {terminatedExpanded ? "Zwiń" : "Rozwiń"}
-                  </span>
-                  {terminatedExpanded ? (
-                    <ChevronDown className="h-5 w-5" />
-                  ) : (
-                    <ChevronRight className="h-5 w-5" />
-                  )}
-                </div>
-              </CardTitle>
-            </CardHeader>
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            <CardContent>
-              {loadingTerminated ? (
-                <div className="flex justify-center py-8">
-                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                </div>
-              ) : terminatedDrivers.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  Brak zwolnionych kierowców
-                </div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Kierowca</TableHead>
-                      <TableHead>Kontakt</TableHead>
-                      <TableHead>Forma zatrudnienia</TableHead>
-                      <TableHead>Data zatrudnienia</TableHead>
-                      <TableHead>Data zwolnienia</TableHead>
-                      <TableHead className="text-right">Akcje</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {terminatedDrivers.map((driver) => (
-                      <TableRow key={driver.id} className="bg-muted/30">
-                        <TableCell>
-                          <div className="flex items-center gap-3">
-                            <div className="h-10 w-10 rounded-full bg-red-100 flex items-center justify-center">
-                              <span className="text-sm font-medium text-red-600">
-                                {driver.firstName[0]}
-                                {driver.lastName[0]}
-                              </span>
-                            </div>
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <Link
-                                  href={`/drivers/${driver.id}`}
-                                  className="font-medium hover:underline"
-                                >
-                                  {driver.firstName} {driver.lastName}
-                                </Link>
-                                {driver.notes && (
-                                  <span title="Posiada notatki"><StickyNote className="h-3 w-3 text-amber-500" /></span>
-                                )}
-                              </div>
-                              {driver.city && (
-                                <p className="text-sm text-muted-foreground">
-                                  {driver.city}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="space-y-1">
-                            {driver.phone && (
-                              <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                                <Phone className="h-3 w-3" />
-                                {driver.phone}
-                              </div>
-                            )}
-                            {driver.email && (
-                              <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                                <Mail className="h-3 w-3" />
-                                {driver.email}
-                              </div>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {employmentTypeLabels[driver.employmentType]}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {formatDisplayDate(driver.employmentDate)}
-                        </TableCell>
-                        <TableCell>
-                          <span className="text-red-600 font-medium">
-                            {formatDisplayDate(driver.terminationDate)}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon">
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem asChild>
-                                <Link href={`/drivers/${driver.id}`}>
-                                  <Eye className="mr-2 h-4 w-4" />
-                                  Szczegóły
-                                </Link>
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => handleRestoreClick(driver)}
-                                className="text-emerald-600"
-                              >
-                                <UserCheck className="mr-2 h-4 w-4" />
-                                Przywróć
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </CollapsibleContent>
-        </Card>
-      </Collapsible>
 
       {/* Edit/Add Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -1050,27 +739,6 @@ export default function DriversPage() {
                 </div>
               </div>
             </div>
-            {/* Notes Section */}
-            <div className="border-t pt-4">
-              <h4 className="font-medium mb-4 flex items-center gap-2">
-                <StickyNote className="h-4 w-4" />
-                Notatki
-              </h4>
-              <div className="space-y-2">
-                <Textarea
-                  id="notes"
-                  value={formData.notes}
-                  onChange={(e) =>
-                    setFormData({ ...formData, notes: e.target.value })
-                  }
-                  placeholder="Dodatkowe informacje o kierowcy..."
-                  className="min-h-[120px]"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Notatki sa widoczne tylko dla pracownikow biura. Historia zmian statusu jest zapisywana automatycznie.
-                </p>
-              </div>
-            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>
@@ -1079,116 +747,6 @@ export default function DriversPage() {
             <Button onClick={handleSubmit} disabled={submitting}>
               {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {editingDriver ? "Zapisz zmiany" : "Dodaj kierowcę"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Termination Dialog */}
-      <Dialog open={terminationDialogOpen} onOpenChange={setTerminationDialogOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-red-600">
-              <UserX className="h-5 w-5" />
-              Zwolnienie kierowcy
-            </DialogTitle>
-            <DialogDescription>
-              Czy na pewno chcesz zwolnić kierowcę{" "}
-              <span className="font-semibold">
-                {driverToTerminate?.firstName} {driverToTerminate?.lastName}
-              </span>
-              ? Kierowca zostanie przeniesiony do listy zwolnionych.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="terminationDate">Data zwolnienia</Label>
-              <Input
-                id="terminationDate"
-                type="date"
-                value={terminationDate}
-                onChange={(e) => setTerminationDate(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="terminationNote">Powód zwolnienia / Notatka</Label>
-              <Textarea
-                id="terminationNote"
-                value={terminationNote}
-                onChange={(e) => setTerminationNote(e.target.value)}
-                placeholder="Podaj powód zwolnienia lub dodatkowe informacje..."
-                className="min-h-[80px]"
-              />
-              <p className="text-xs text-muted-foreground">
-                Notatka zostanie zapisana w profilu kierowcy z data i oznaczeniem &quot;ZWOLNIENIE&quot;.
-              </p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setTerminationDialogOpen(false)}
-            >
-              Anuluj
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleTerminate}
-              disabled={terminating}
-            >
-              {terminating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Zwolnij kierowcę
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Restore Dialog */}
-      <Dialog open={restoreDialogOpen} onOpenChange={setRestoreDialogOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-emerald-600">
-              <UserCheck className="h-5 w-5" />
-              Przywrócenie kierowcy
-            </DialogTitle>
-            <DialogDescription>
-              Czy na pewno chcesz przywrócić kierowcę{" "}
-              <span className="font-semibold">
-                {driverToRestore?.firstName} {driverToRestore?.lastName}
-              </span>
-              ? Kierowca zostanie przeniesiony do listy aktywnych ze statusem
-              &quot;Aktywny&quot;.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="restoreNote">Notatka (opcjonalnie)</Label>
-              <Textarea
-                id="restoreNote"
-                value={restoreNote}
-                onChange={(e) => setRestoreNote(e.target.value)}
-                placeholder="Dodatkowe informacje o przywróceniu..."
-                className="min-h-[80px]"
-              />
-              <p className="text-xs text-muted-foreground">
-                Notatka zostanie zapisana w profilu kierowcy z data i oznaczeniem &quot;PRZYWROCENIE&quot;.
-              </p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setRestoreDialogOpen(false)}
-            >
-              Anuluj
-            </Button>
-            <Button
-              className="bg-emerald-600 hover:bg-emerald-700"
-              onClick={handleRestore}
-              disabled={restoring}
-            >
-              {restoring && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Przywróć kierowcę
             </Button>
           </DialogFooter>
         </DialogContent>

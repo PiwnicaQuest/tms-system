@@ -108,7 +108,7 @@ export async function POST(request: NextRequest) {
     // Calculate amounts
     const calculatedItems = items.map((item) => {
       const netAmount = item.quantity * item.unitPriceNet;
-      const vatAmount = item.vatRate >= 0 ? netAmount * (item.vatRate / 100) : 0;
+      const vatAmount = netAmount * (item.vatRate / 100);
       const grossAmount = netAmount + vatAmount;
       return { ...item, netAmount, vatAmount, grossAmount };
     });

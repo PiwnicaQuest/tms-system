@@ -22,10 +22,12 @@ import {
   Code,
   Webhook,
   Shield,
+  MessageSquare,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 
 import { Building2, Container } from "lucide-react";
 
@@ -34,12 +36,14 @@ interface NavItem {
   href: string;
   icon: React.ComponentType<{ className?: string }>;
   roles?: string[];
+  hasBadge?: boolean;
 }
 
 const navigation: NavItem[] = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { name: "Zlecenia", href: "/orders", icon: ClipboardList },
   { name: "Kalendarz", href: "/calendar", icon: Calendar },
+  { name: "Notatki", href: "/notes", icon: MessageSquare, hasBadge: true },
   { name: "Pojazdy", href: "/vehicles", icon: Truck },
   { name: "Mapa GPS", href: "/gps", icon: MapPin },
   { name: "Naczepy", href: "/trailers", icon: Container },
@@ -60,8 +64,31 @@ const navigation: NavItem[] = [
 export function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const [unreadNotesCount, setUnreadNotesCount] = useState(0);
   const { data: session } = useSession();
   const userRole = session?.user?.role;
+
+  // Fetch unread notes count
+  useEffect(() => {
+    async function fetchUnreadCount() {
+      try {
+        const response = await fetch("/api/notes/unread-count");
+        if (response.ok) {
+          const data = await response.json();
+          setUnreadNotesCount(data.count);
+        }
+      } catch (error) {
+        console.error("Error fetching unread notes count:", error);
+      }
+    }
+
+    if (session?.user) {
+      fetchUnreadCount();
+      // Refresh every 60 seconds
+      const interval = setInterval(fetchUnreadCount, 60000);
+      return () => clearInterval(interval);
+    }
+  }, [session?.user]);
 
   // Filter navigation items based on user role
   const filteredNavigation = navigation.filter((item) => {
@@ -97,12 +124,13 @@ export function Sidebar() {
       <nav className="flex-1 space-y-1 p-2">
         {filteredNavigation.map((item) => {
           const isActive = pathname.startsWith(item.href);
+          const showBadge = item.hasBadge && item.href === "/notes" && unreadNotesCount > 0;
           return (
             <Link
               key={item.name}
               href={item.href}
               className={cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors relative",
                 isActive
                   ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground",
@@ -110,8 +138,24 @@ export function Sidebar() {
               )}
               title={collapsed ? item.name : undefined}
             >
-              <item.icon className="h-5 w-5 shrink-0" />
-              {!collapsed && <span>{item.name}</span>}
+              <div className="relative">
+                <item.icon className="h-5 w-5 shrink-0" />
+                {showBadge && collapsed && (
+                  <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground">
+                    {unreadNotesCount > 9 ? "9+" : unreadNotesCount}
+                  </span>
+                )}
+              </div>
+              {!collapsed && (
+                <>
+                  <span className="flex-1">{item.name}</span>
+                  {showBadge && (
+                    <Badge variant="destructive" className="ml-auto h-5 min-w-[20px] px-1.5 text-xs">
+                      {unreadNotesCount > 99 ? "99+" : unreadNotesCount}
+                    </Badge>
+                  )}
+                </>
+              )}
             </Link>
           );
         })}

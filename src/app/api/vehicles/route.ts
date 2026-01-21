@@ -151,16 +151,6 @@ export async function GET(request: NextRequest) {
           isActive: true,
           createdAt: true,
           updatedAt: true,
-          photos: {
-            select: {
-              id: true,
-              url: true,
-              description: true,
-              isPrimary: true,
-            },
-            orderBy: [{ isPrimary: "desc" }, { createdAt: "desc" }],
-            take: 5,
-          },
         },
       }),
       prisma.vehicle.count({ where }),

@@ -33,8 +33,6 @@ export async function GET(request: NextRequest) {
     const dateFrom = searchParams.get("dateFrom");
     const dateTo = searchParams.get("dateTo");
     const search = searchParams.get("search");
-    const originSearch = searchParams.get("originSearch");
-    const destinationSearch = searchParams.get("destinationSearch");
     const page = parseInt(searchParams.get("page") || "1", 10);
     const limit = parseInt(searchParams.get("limit") || "20", 10);
     const sortBy = searchParams.get("sortBy") || "loadingDate";
@@ -69,28 +67,6 @@ export async function GET(request: NextRequest) {
       if (dateTo) {
         where.loadingDate.lte = new Date(dateTo);
       }
-    }
-
-    // Origin address filter
-    if (originSearch) {
-      where.AND = where.AND || [];
-      (where.AND as Prisma.OrderWhereInput[]).push({
-        OR: [
-          { origin: { contains: originSearch, mode: "insensitive" } },
-          { originCity: { contains: originSearch, mode: "insensitive" } },
-        ],
-      });
-    }
-
-    // Destination address filter
-    if (destinationSearch) {
-      where.AND = where.AND || [];
-      (where.AND as Prisma.OrderWhereInput[]).push({
-        OR: [
-          { destination: { contains: destinationSearch, mode: "insensitive" } },
-          { destinationCity: { contains: destinationSearch, mode: "insensitive" } },
-        ],
-      });
     }
 
     if (search) {
@@ -187,9 +163,6 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
 
-    // Extract waypoints from body
-    const { waypoints, ...orderData } = body;
-
     // Validate required fields
     const requiredFields = [
       "orderNumber",
@@ -200,7 +173,7 @@ export async function POST(request: NextRequest) {
     ];
 
     for (const field of requiredFields) {
-      if (!orderData[field]) {
+      if (!body[field]) {
         return NextResponse.json(
           { error: `Pole ${field} jest wymagane` },
           { status: 400 }
@@ -213,7 +186,7 @@ export async function POST(request: NextRequest) {
       where: {
         tenantId_orderNumber: {
           tenantId,
-          orderNumber: orderData.orderNumber,
+          orderNumber: body.orderNumber,
         },
       },
     });
@@ -226,59 +199,57 @@ export async function POST(request: NextRequest) {
     }
 
     // Parse dates
-    const loadingDate = new Date(orderData.loadingDate);
-    const unloadingDate = new Date(orderData.unloadingDate);
+    const loadingDate = new Date(body.loadingDate);
+    const unloadingDate = new Date(body.unloadingDate);
 
-    // Create order with initial assignment and waypoints in a transaction
+    // Create order with initial assignment in a transaction
     const order = await prisma.$transaction(async (tx) => {
       // Create the order
       const newOrder = await tx.order.create({
         data: {
           tenantId,
-          orderNumber: orderData.orderNumber,
-          externalNumber: orderData.externalNumber || null,
-          type: (orderData.type as OrderType) || OrderType.OWN,
-          status: (orderData.status as OrderStatus) || OrderStatus.PLANNED,
-          contractorId: orderData.contractorId || null,
-          subcontractorId: orderData.subcontractorId || null,
-          vehicleId: orderData.vehicleId || null,
-          trailerId: orderData.trailerId || null,
-          driverId: orderData.driverId || null,
-          origin: orderData.origin,
-          originCity: orderData.originCity || null,
-          originPostalCode: orderData.originPostalCode || null,
-          originCountry: orderData.originCountry || "PL",
-          destination: orderData.destination,
-          destinationCity: orderData.destinationCity || null,
-          destinationPostalCode: orderData.destinationPostalCode || null,
-          destinationCountry: orderData.destinationCountry || "PL",
-          distanceKm: orderData.distanceKm ? parseFloat(orderData.distanceKm) : null,
+          orderNumber: body.orderNumber,
+          externalNumber: body.externalNumber || null,
+          type: (body.type as OrderType) || OrderType.OWN,
+          status: (body.status as OrderStatus) || OrderStatus.PLANNED,
+          contractorId: body.contractorId || null,
+          subcontractorId: body.subcontractorId || null,
+          vehicleId: body.vehicleId || null,
+          trailerId: body.trailerId || null,
+          driverId: body.driverId || null,
+          origin: body.origin,
+          originCity: body.originCity || null,
+          originCountry: body.originCountry || "PL",
+          destination: body.destination,
+          destinationCity: body.destinationCity || null,
+          destinationCountry: body.destinationCountry || "PL",
+          distanceKm: body.distanceKm ? parseFloat(body.distanceKm) : null,
           loadingDate,
-          loadingTimeFrom: orderData.loadingTimeFrom || null,
-          loadingTimeTo: orderData.loadingTimeTo || null,
+          loadingTimeFrom: body.loadingTimeFrom || null,
+          loadingTimeTo: body.loadingTimeTo || null,
           unloadingDate,
-          unloadingTimeFrom: orderData.unloadingTimeFrom || null,
-          unloadingTimeTo: orderData.unloadingTimeTo || null,
-          cargoDescription: orderData.cargoDescription || null,
-          cargoWeight: orderData.cargoWeight ? parseFloat(orderData.cargoWeight) : null,
-          cargoVolume: orderData.cargoVolume ? parseFloat(orderData.cargoVolume) : null,
-          cargoPallets: orderData.cargoPallets ? parseInt(orderData.cargoPallets, 10) : null,
-          cargoValue: orderData.cargoValue ? parseFloat(orderData.cargoValue) : null,
-          requiresAdr: orderData.requiresAdr || false,
-          priceNet: orderData.priceNet ? parseFloat(orderData.priceNet) : null,
-          currency: orderData.currency || "PLN",
-          costNet: orderData.costNet ? parseFloat(orderData.costNet) : null,
-          flatRateKm: orderData.flatRateKm ? parseFloat(orderData.flatRateKm) : null,
-          flatRateOverage: orderData.flatRateOverage
-            ? parseFloat(orderData.flatRateOverage)
+          unloadingTimeFrom: body.unloadingTimeFrom || null,
+          unloadingTimeTo: body.unloadingTimeTo || null,
+          cargoDescription: body.cargoDescription || null,
+          cargoWeight: body.cargoWeight ? parseFloat(body.cargoWeight) : null,
+          cargoVolume: body.cargoVolume ? parseFloat(body.cargoVolume) : null,
+          cargoPallets: body.cargoPallets ? parseInt(body.cargoPallets, 10) : null,
+          cargoValue: body.cargoValue ? parseFloat(body.cargoValue) : null,
+          requiresAdr: body.requiresAdr || false,
+          priceNet: body.priceNet ? parseFloat(body.priceNet) : null,
+          currency: body.currency || "PLN",
+          costNet: body.costNet ? parseFloat(body.costNet) : null,
+          flatRateKm: body.flatRateKm ? parseFloat(body.flatRateKm) : null,
+          flatRateOverage: body.flatRateOverage
+            ? parseFloat(body.flatRateOverage)
             : null,
-          kmLimit: orderData.kmLimit ? parseFloat(orderData.kmLimit) : null,
-          kmOverageRate: orderData.kmOverageRate
-            ? parseFloat(orderData.kmOverageRate)
+          kmLimit: body.kmLimit ? parseFloat(body.kmLimit) : null,
+          kmOverageRate: body.kmOverageRate
+            ? parseFloat(body.kmOverageRate)
             : null,
-          notes: orderData.notes || null,
-          internalNotes: orderData.internalNotes || null,
-          createdById: orderData.createdById || null,
+          notes: body.notes || null,
+          internalNotes: body.internalNotes || null,
+          createdById: body.createdById || null,
         },
         include: {
           contractor: {
@@ -310,30 +281,13 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      // Create waypoints if provided
-      if (waypoints && Array.isArray(waypoints) && waypoints.length > 0) {
-        await tx.waypoint.createMany({
-          data: waypoints.map((wp: any, index: number) => ({
-            orderId: newOrder.id,
-            sequence: wp.sequence || index + 1,
-            type: "STOP",
-            address: wp.address,
-            city: wp.city || null,
-            country: wp.country || "PL",
-            scheduledDate: wp.scheduledDate ? new Date(wp.scheduledDate) : null,
-            scheduledTime: wp.scheduledTime || null,
-            notes: wp.notes || null,
-          })),
-        });
-      }
-
       // Handle assignments - either from assignments array or single driver/vehicle
-      const priceNet = orderData.priceNet ? parseFloat(orderData.priceNet) : null;
+      const priceNet = body.priceNet ? parseFloat(body.priceNet) : null;
 
-      if (orderData.assignments && Array.isArray(orderData.assignments) && orderData.assignments.length > 0) {
+      if (body.assignments && Array.isArray(body.assignments) && body.assignments.length > 0) {
         // Create multiple assignments from the assignments array
-        for (let i = 0; i < orderData.assignments.length; i++) {
-          const assignment = orderData.assignments[i];
+        for (let i = 0; i < body.assignments.length; i++) {
+          const assignment = body.assignments[i];
           const allocatedAmount = priceNet && assignment.revenueShare
             ? priceNet * assignment.revenueShare
             : null;
@@ -356,19 +310,19 @@ export async function POST(request: NextRequest) {
             },
           });
         }
-      } else if (orderData.driverId) {
+      } else if (body.driverId) {
         // Fallback to single assignment for backwards compatibility
         await tx.orderAssignment.create({
           data: {
             tenantId,
             orderId: newOrder.id,
-            driverId: orderData.driverId,
-            vehicleId: orderData.vehicleId || null,
-            trailerId: orderData.trailerId || null,
+            driverId: body.driverId,
+            vehicleId: body.vehicleId || null,
+            trailerId: body.trailerId || null,
             startDate: loadingDate,
             revenueShare: 1.0,
             allocatedAmount: priceNet,
-            distanceKm: orderData.distanceKm ? parseFloat(orderData.distanceKm) : null,
+            distanceKm: body.distanceKm ? parseFloat(body.distanceKm) : null,
             reason: "INITIAL",
             isPrimary: true,
             isActive: true,
