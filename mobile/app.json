@@ -1,0 +1,82 @@
+{
+  "expo": {
+    "name": "Bakus TMS Kierowca",
+    "slug": "bakus-tms-driver",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1e40af"
+    },
+    "scheme": "bakus-driver",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "pl.bakus.tms.driver",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Aplikacja wymaga dostępu do lokalizacji do śledzenia tras.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Aplikacja wymaga dostępu do lokalizacji do śledzenia tras w tle.",
+        "NSCameraUsageDescription": "Aplikacja wymaga dostępu do aparatu do dokumentacji fotograficznej.",
+        "NSPhotoLibraryUsageDescription": "Aplikacja wymaga dostępu do galerii do wyboru zdjęć."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1e40af"
+      },
+      "package": "pl.bakus.tms.driver",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE"
+      ],
+      "googleServicesFile": "./google-services.json"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Aplikacja wymaga dostępu do lokalizacji do śledzenia tras."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Aplikacja wymaga dostępu do aparatu do dokumentacji fotograficznej."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Aplikacja wymaga dostępu do galerii do wyboru zdjęć."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#3B82F6",
+          "defaultChannel": "default"
+        }
+      ]
+    ],
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "your-project-id"
+      }
+    }
+  }
+}

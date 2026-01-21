@@ -1,0 +1,1316 @@
+// Bakus TMS 2.0 - Prisma Schema
+// Transport Management System
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== MULTI-TENANCY ====================
+
+model Tenant {
+  id            String   @id @default(cuid())
+  name          String
+  slug          String   @unique
+  nip           String?
+  address       String?
+  city          String?
+  postalCode    String?
+  country       String   @default("PL")
+  phone         String?
+  email         String?
+  logo          String?
+  plan          TenantPlan @default(BASIC)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  users             User[]
+  vehicles          Vehicle[]
+  trailers          Trailer[]
+  drivers           Driver[]
+  orders            Order[]
+  invoices          Invoice[]
+  costs             Cost[]
+  contractors       Contractor[]
+  documents         Document[]
+  dailyWorkRecords  DailyWorkRecord[]
+  driverMonthlyReports  DriverMonthlyReport[]
+  vehicleMonthlyReports VehicleMonthlyReport[]
+  invoiceSettings   InvoiceSettings?
+  webhooks          Webhook[]
+  auditLogs         AuditLog[]
+  orderAssignments  OrderAssignment[]
+  recurringOrders   RecurringOrder[]
+}
+
+// Ustawienia faktur per tenant
+model InvoiceSettings {
+  id              String   @id @default(cuid())
+  tenantId        String   @unique
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  // Terminy płatności
+  paymentDays     Int      @default(14)
+
+  // Dane bankowe
+  bankAccount     String?
+  bankName        String?
+  swiftCode       String?
+
+  // Domyślna stawka VAT
+  defaultVatRate  Int      @default(23)
+
+  // Numeracja faktur
+  invoicePrefix   String   @default("FV")
+  nextInvoiceNumber Int    @default(1)
+
+  // Uwagi domyślne
+  defaultNotes    String?
+
+  // KSeF (Krajowy System e-Faktur) settings
+  ksefEnabled     Boolean  @default(false)
+  ksefEnvironment String   @default("test") // "test" | "production"
+  ksefNip         String?  // NIP used for KSeF (can differ from tenant NIP)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+enum TenantPlan {
+  BASIC
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+// ==================== USERS & AUTH ====================
+
+model User {
+  id            String    @id @default(cuid())
+  tenantId      String?
+  tenant        Tenant?   @relation(fields: [tenantId], references: [id])
+
+  email         String    @unique
+  emailVerified DateTime?
+  password      String?
+  name          String?
+  image         String?
+  phone         String?
+  role          UserRole  @default(VIEWER)
+  isActive      Boolean   @default(true)
+
+  // 2FA
+  twoFactorEnabled  Boolean @default(false)
+  twoFactorSecret   String?
+  recoveryCodes     String?   // JSON array of hashed recovery codes
+
+  // Driver specific
+  vehicleId     String?
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  lastLoginAt   DateTime?
+
+  accounts      Account[]
+  sessions      Session[]
+  auditLogs     AuditLog[]
+  pushTokens    PushToken[]
+  orderPhotos   OrderPhoto[]
+  createdRecurringOrders RecurringOrder[]
+
+  @@index([tenantId])
+  @@index([email])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  MANAGER
+  DISPATCHER
+  ACCOUNTANT
+  DRIVER
+  VIEWER
+}
+
+// ==================== FLEET - VEHICLES ====================
+
+model Vehicle {
+  id                String   @id @default(cuid())
+  tenantId          String
+  tenant            Tenant   @relation(fields: [tenantId], references: [id])
+
+  registrationNumber String
+  type              VehicleType
+  brand             String?
+  model             String?
+  vin               String?
+  year              Int?
+
+  status            VehicleStatus @default(ACTIVE)
+
+  // Technical specs
+  loadCapacity      Float?   // kg
+  volume            Float?   // m3
+  euroClass         String?
+  fuelType          FuelType?
+
+  // Current assignment
+  currentDriverId   String?
+  currentTrailerId  String?
+
+  // GPS
+  lastLatitude      Float?
+  lastLongitude     Float?
+  lastGpsUpdate     DateTime?
+
+  notes             String?
+  isActive          Boolean  @default(true)
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  orders            Order[]
+  costs             Cost[]
+  documents         Document[]
+  dailyWorkRecords  DailyWorkRecord[]
+  vehicleMonthlyReports VehicleMonthlyReport[]
+  fuelRecords       FuelRecord[]
+  orderAssignments  OrderAssignment[]
+  photos            VehiclePhoto[]
+
+  @@unique([tenantId, registrationNumber])
+  @@index([tenantId])
+  @@index([status])
+}
+
+enum VehicleType {
+  TRUCK       // Ciągnik
+  BUS         // Bus
+  SOLO        // Solówka
+  TRAILER     // Naczepa (jako pojazd)
+  CAR         // Osobówka
+}
+
+enum VehicleStatus {
+  ACTIVE
+  INACTIVE
+  IN_SERVICE
+  SOLD
+}
+
+enum FuelType {
+  DIESEL
+  PETROL
+  LPG
+  ELECTRIC
+  HYBRID
+}
+
+model Trailer {
+  id                String   @id @default(cuid())
+  tenantId          String
+  tenant            Tenant   @relation(fields: [tenantId], references: [id])
+
+  registrationNumber String
+  type              TrailerType
+  brand             String?
+  year              Int?
+
+  // Specs
+  loadCapacity      Float?
+  volume            Float?
+  axles             Int?
+
+  // ADR
+  adrClasses        String?  // Comma-separated ADR classes
+
+  status            VehicleStatus @default(ACTIVE)
+  notes             String?
+  isActive          Boolean  @default(true)
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  orders            Order[]
+  documents         Document[]
+  orderAssignments  OrderAssignment[]
+  photos            TrailerPhoto[]
+
+  @@unique([tenantId, registrationNumber])
+  @@index([tenantId])
+}
+
+enum TrailerType {
+  CURTAIN      // Firanka
+  REFRIGERATOR // Chłodnia
+  TANKER       // Cysterna
+  FLATBED      // Platforma
+  MEGA         // Mega
+  BOX          // Kontener
+  TIPPER       // Wywrotka
+  OTHER
+}
+
+// ==================== FLEET - DRIVERS ====================
+
+model Driver {
+  id                String   @id @default(cuid())
+  tenantId          String
+  tenant            Tenant   @relation(fields: [tenantId], references: [id])
+
+  // Personal info
+  firstName         String
+  lastName          String
+  pesel             String?
+  dateOfBirth       DateTime?
+  phone             String?
+  email             String?
+  address           String?
+  city              String?
+  postalCode        String?
+
+  // Employment
+  employmentType    EmploymentType @default(EMPLOYMENT)
+  employmentDate    DateTime?
+  terminationDate   DateTime?
+
+  // Assignment
+  currentVehicleId  String?
+
+  // Driver license
+  licenseNumber     String?
+  licenseExpiry     DateTime?
+  licenseCategories String?  // e.g., "C, CE, D"
+
+  // ADR
+  adrNumber         String?
+  adrExpiry         DateTime?
+  adrClasses        String?
+
+  // Medical
+  medicalExpiry     DateTime?
+
+  status            DriverStatus @default(ACTIVE)
+  notes             String?
+  isActive          Boolean  @default(true)
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  orders            Order[]
+  costs             Cost[]
+  documents         Document[]
+  dailyWorkRecords  DailyWorkRecord[]
+  driverMonthlyReports DriverMonthlyReport[]
+  orderAssignments  OrderAssignment[]
+
+  @@index([tenantId])
+  @@index([status])
+}
+
+enum DriverStatus {
+  ACTIVE
+  ON_LEAVE
+  SICK
+  INACTIVE
+  TERMINATED
+}
+
+enum EmploymentType {
+  EMPLOYMENT  // Umowa o prace
+  B2B         // Dzialalnosc
+  CONTRACT    // Umowa zlecenie
+}
+
+// ==================== ORDERS ====================
+
+model Order {
+  id                 String   @id @default(cuid())
+  tenantId           String
+  tenant             Tenant   @relation(fields: [tenantId], references: [id])
+
+  // Order number
+  orderNumber        String
+  externalNumber     String?
+
+  // Type & Status
+  type               OrderType @default(OWN)
+  status             OrderStatus @default(PLANNED)
+
+  // Client
+  contractorId       String?
+  contractor         Contractor? @relation("OrderContractor", fields: [contractorId], references: [id])
+
+  // Subcontractor (for forwarding)
+  subcontractorId    String?
+  subcontractor      Contractor? @relation("OrderSubcontractor", fields: [subcontractorId], references: [id])
+
+  // Assignment
+  vehicleId          String?
+  vehicle            Vehicle? @relation(fields: [vehicleId], references: [id])
+  trailerId          String?
+  trailer            Trailer? @relation(fields: [trailerId], references: [id])
+  driverId           String?
+  driver             Driver?  @relation(fields: [driverId], references: [id])
+
+  // Route
+  origin             String
+  originCity         String?
+  originPostalCode   String?
+  originCountry      String @default("PL")
+  destination        String
+  destinationCity    String?
+  destinationPostalCode String?
+  destinationCountry String @default("PL")
+  distanceKm         Float?
+
+  // Dates
+  loadingDate        DateTime
+  loadingTimeFrom    String?
+  loadingTimeTo      String?
+  unloadingDate      DateTime
+  unloadingTimeFrom  String?
+  unloadingTimeTo    String?
+
+  // Cargo
+  cargoDescription   String?
+  cargoWeight        Float?
+  cargoVolume        Float?
+  cargoPallets       Int?
+  cargoValue         Float?
+  requiresAdr        Boolean @default(false)
+
+  // Pricing
+  priceNet           Float?
+  currency           String @default("PLN")
+  costNet            Float?  // For forwarding
+
+  // Flat rate
+  flatRateKm         Float?
+  flatRateOverage    Float?
+  kmLimit            Float?
+  kmOverageRate      Float?
+
+  notes              String?
+  internalNotes      String?
+
+  // Mobile app / Driver specific
+  loadingAddress     String?
+  loadingContact     String?
+  loadingPhone       String?
+  unloadingAddress   String?
+  unloadingContact   String?
+  unloadingPhone     String?
+
+  // POD (Proof of Delivery)
+  podSignatureUrl    String?
+  podRecipientName   String?
+  podSignedAt        DateTime?
+  deliveredAt        DateTime?
+  completedAt        DateTime?
+
+  // GPS tracking
+  lastLatitude       Float?
+  lastLongitude      Float?
+  lastLocationAt     DateTime?
+
+  // Relations
+  waypoints          Waypoint[]
+  documents          Document[]
+  invoice            Invoice? @relation(fields: [invoiceId], references: [id])
+  invoiceId          String?
+  dailyWorkRecords   DailyWorkRecord[]
+  photos             OrderPhoto[]
+  locations          OrderLocation[]
+  assignments        OrderAssignment[]  // Historia przypisań kierowców/pojazdów
+
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  createdById        String?
+
+  @@unique([tenantId, orderNumber])
+  @@index([tenantId])
+  @@index([status])
+  @@index([contractorId])
+  @@index([driverId])
+  @@index([vehicleId])
+  @@index([loadingDate])
+}
+
+enum OrderType {
+  OWN         // Wlasny transport
+  FORWARDING  // Spedycja
+}
+
+enum OrderStatus {
+  PLANNED      // Zaplanowane
+  ASSIGNED     // Przypisane
+  CONFIRMED    // Potwierdzone
+  NEW          // Nowe (dla kierowcy)
+  ACCEPTED     // Zaakceptowane przez kierowcę
+  LOADING      // Załadunek
+  IN_TRANSIT   // W trasie
+  UNLOADING    // Rozładunek
+  DELIVERED    // Dostarczone (POD)
+  COMPLETED    // Zrealizowane
+  CANCELLED    // Anulowane
+  PROBLEM      // Problem
+}
+
+model Waypoint {
+  id           String   @id @default(cuid())
+  orderId      String
+  order        Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  sequence     Int
+  type         WaypointType
+  address      String
+  city         String?
+  country      String   @default("PL")
+
+  scheduledDate DateTime?
+  scheduledTime String?
+
+  notes        String?
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([orderId])
+}
+
+enum WaypointType {
+  LOADING
+  UNLOADING
+  STOP
+}
+
+// ==================== ORDER ASSIGNMENTS (Multi-driver/vehicle) ====================
+
+// Historia przypisań kierowców i pojazdów do zlecenia
+model OrderAssignment {
+  id              String   @id @default(cuid())
+  tenantId        String
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+
+  // Powiązanie ze zleceniem
+  orderId         String
+  order           Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  // Kto jest przypisany
+  driverId        String
+  driver          Driver   @relation(fields: [driverId], references: [id])
+  vehicleId       String?
+  vehicle         Vehicle? @relation(fields: [vehicleId], references: [id])
+  trailerId       String?
+  trailer         Trailer? @relation(fields: [trailerId], references: [id])
+
+  // Kiedy
+  startDate       DateTime              // Data rozpoczęcia przypisania
+  endDate         DateTime?             // null = aktualnie aktywny
+
+  // Rozliczenia
+  revenueShare    Float    @default(1.0)   // 0-1 (udział w przychodzie)
+  allocatedAmount Float?                    // Obliczona kwota
+  distanceKm      Float?                    // Przejechane km w tym przypisaniu
+
+  // Powód zmiany
+  reason          AssignmentReason @default(INITIAL)
+  reasonNote      String?               // Dodatkowy opis
+
+  // Status
+  isPrimary       Boolean  @default(false) // Czy to główne przypisanie
+  isActive        Boolean  @default(true)
+
+  // Audit
+  createdAt       DateTime @default(now())
+  createdBy       String?
+  updatedAt       DateTime @updatedAt
+
+  @@unique([tenantId, orderId, driverId, startDate])
+  @@index([tenantId])
+  @@index([orderId])
+  @@index([driverId])
+  @@index([vehicleId])
+  @@index([startDate, endDate])
+}
+
+enum AssignmentReason {
+  INITIAL           // Pierwsze przypisanie
+  DRIVER_ILLNESS    // Choroba kierowcy
+  DRIVER_VACATION   // Urlop kierowcy
+  VEHICLE_BREAKDOWN // Awaria pojazdu
+  VEHICLE_SERVICE   // Serwis pojazdu
+  SCHEDULE_CONFLICT // Konflikt harmonogramu
+  CLIENT_REQUEST    // Na życzenie klienta
+  OPTIMIZATION      // Optymalizacja trasy
+  OTHER             // Inne
+}
+
+// ==================== COST ALLOCATION (Rozliczenia Kosztow) ====================
+
+// Dzienny rekord pracy - alokacja przychodu do kierowcy i pojazdu
+model DailyWorkRecord {
+  id              String   @id @default(cuid())
+  tenantId        String
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+
+  // Data pracy
+  date            DateTime @db.Date
+
+  // Kierowca wykonujacy prace
+  driverId        String
+  driver          Driver   @relation(fields: [driverId], references: [id])
+
+  // Pojazd uzyty do pracy
+  vehicleId       String
+  vehicle         Vehicle  @relation(fields: [vehicleId], references: [id])
+
+  // Powiazanie ze zleceniem (opcjonalne)
+  orderId         String?
+  order           Order?   @relation(fields: [orderId], references: [id])
+
+  // Opis trasy/pracy
+  routeDescription String?
+  clientCompany    String?
+
+  // Alokacja przychodu
+  revenueShare     Float    @default(1.0)  // 1.0 = 100%, 0.5 = 50%
+  allocatedAmount  Float                   // Obliczona kwota
+
+  // Status dnia
+  workType         WorkType @default(ROUTE)
+
+  // Uwagi
+  notes            String?
+
+  // Invoice tracking
+  invoiced         Boolean @default(false)
+  invoiceId        String?
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  createdById      String?
+
+  @@unique([tenantId, date, driverId, vehicleId, orderId])
+  @@index([tenantId])
+  @@index([date])
+  @@index([driverId])
+  @@index([vehicleId])
+  @@index([orderId])
+}
+
+enum WorkType {
+  ROUTE       // Trasa/zlecenie
+  LOADING     // Tylko zaladunek
+  UNLOADING   // Tylko rozladunek
+  TRANSFER    // Przejazd bez ladunku
+  STANDBY     // Oczekiwanie
+  MAINTENANCE // Serwis/naprawa
+  DAY_OFF     // Dzien wolny
+  SICK        // Chorobowe
+  VACATION    // Urlop
+}
+
+// Raport miesieczny kierowcy
+model DriverMonthlyReport {
+  id              String   @id @default(cuid())
+  tenantId        String
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+
+  driverId        String
+  driver          Driver   @relation(fields: [driverId], references: [id])
+
+  year            Int
+  month           Int      // 1-12
+
+  // Statystyki
+  workDays        Int      @default(0)
+  totalRevenue    Float    @default(0)
+  totalOrders     Int      @default(0)
+  avgDailyRevenue Float    @default(0)
+
+  // Status
+  isFinalized     Boolean  @default(false)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([tenantId, driverId, year, month])
+  @@index([tenantId])
+  @@index([driverId])
+}
+
+// Raport miesieczny pojazdu (rentownosc)
+model VehicleMonthlyReport {
+  id              String   @id @default(cuid())
+  tenantId        String
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+
+  vehicleId       String
+  vehicle         Vehicle  @relation(fields: [vehicleId], references: [id])
+
+  year            Int
+  month           Int      // 1-12
+
+  // Przychody
+  operatingDays   Int      @default(0)
+  totalRevenue    Float    @default(0)
+
+  // Koszty
+  fuelCost        Float    @default(0)
+  serviceCost     Float    @default(0)
+  tollCost        Float    @default(0)
+  insuranceCost   Float    @default(0)
+  otherCost       Float    @default(0)
+  totalCost       Float    @default(0)
+
+  // Rentownosc
+  profit          Float    @default(0)
+  profitMargin    Float    @default(0)
+
+  // Kierowcy
+  driversCount    Int      @default(0)
+
+  // Status
+  isFinalized     Boolean  @default(false)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([tenantId, vehicleId, year, month])
+  @@index([tenantId])
+  @@index([vehicleId])
+}
+
+// ==================== FINANCE ====================
+
+model Invoice {
+  id              String   @id @default(cuid())
+  tenantId        String
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+
+  invoiceNumber   String
+  type            InvoiceType @default(SINGLE)
+  status          InvoiceStatus @default(DRAFT)
+
+  // Client
+  contractorId    String?
+  contractor      Contractor? @relation(fields: [contractorId], references: [id])
+
+  // Dates
+  issueDate       DateTime
+  saleDate        DateTime?
+  dueDate         DateTime
+
+  // Amounts
+  netAmount       Float
+  vatAmount       Float
+  grossAmount     Float
+  currency        String @default("PLN")
+
+  // Exchange rate (for foreign currencies)
+  exchangeRate      Float?
+  exchangeRateDate  DateTime?
+  exchangeRateTable String?
+  amountPln         Float?
+
+  // Payment
+  paymentMethod   PaymentMethod @default(TRANSFER)
+  bankAccount     String?
+  isPaid          Boolean @default(false)
+  paidDate        DateTime?
+  paidAmount      Float?
+
+  // KSeF
+  ksefNumber      String?
+  ksefStatus      String?
+  ksefSentAt      DateTime?
+
+  notes           String?
+  pdfUrl          String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  orders          Order[]
+  items           InvoiceItem[]
+
+  @@unique([tenantId, invoiceNumber])
+  @@index([tenantId])
+  @@index([status])
+  @@index([contractorId])
+}
+
+model InvoiceItem {
+  id              String   @id @default(cuid())
+  invoiceId       String
+  invoice         Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  description     String
+  quantity        Float    @default(1)
+  unit            String   @default("szt.")
+  unitPriceNet    Float
+  vatRate         Float    @default(23)
+  netAmount       Float
+  vatAmount       Float
+  grossAmount     Float
+
+  createdAt       DateTime @default(now())
+
+  @@index([invoiceId])
+}
+
+enum InvoiceType {
+  SINGLE      // Pojedyncza
+  COLLECTIVE  // Zbiorcza
+  PROFORMA    // Pro forma
+  CORRECTION  // Korekta
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  SENT
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+enum PaymentMethod {
+  TRANSFER
+  CASH
+  CARD
+}
+
+model Cost {
+  id           String   @id @default(cuid())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+
+  category     CostCategory
+  description  String?
+  amount       Float
+  currency     String @default("PLN")
+  date         DateTime
+
+  // Assignment
+  vehicleId    String?
+  vehicle      Vehicle? @relation(fields: [vehicleId], references: [id])
+  driverId     String?
+  driver       Driver?  @relation(fields: [driverId], references: [id])
+  orderId      String?
+
+  // Attachment
+  attachmentUrl String?
+  notes        String?
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([category])
+  @@index([date])
+  @@index([vehicleId])
+}
+
+enum CostCategory {
+  FUEL
+  SERVICE
+  TOLL
+  INSURANCE
+  PARKING
+  FINE
+  SALARY
+  TAX
+  OFFICE
+  OTHER
+}
+
+model FuelRecord {
+  id           String   @id @default(cuid())
+  tenantId     String
+
+  vehicleId    String
+  vehicle      Vehicle  @relation(fields: [vehicleId], references: [id])
+
+  date         DateTime
+  liters       Float
+  pricePerLiter Float
+  totalAmount  Float
+  odometer     Float?
+  station      String?
+  fuelType     FuelType @default(DIESEL)
+
+  notes        String?
+
+  createdAt    DateTime @default(now())
+
+  @@index([vehicleId])
+  @@index([date])
+}
+
+// ==================== CONTRACTORS ====================
+
+model Contractor {
+  id           String   @id @default(cuid())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+
+  type         ContractorType
+  name         String
+  shortName    String?
+  nip          String?
+  regon        String?
+
+  address      String?
+  city         String?
+  postalCode   String?
+  country      String @default("PL")
+
+  phone        String?
+  email        String?
+  website      String?
+
+  contactPerson String?
+  contactPhone  String?
+  contactEmail  String?
+
+  paymentDays  Int @default(14)
+  creditLimit  Float?
+
+  isActive     Boolean @default(true)
+  notes        String?
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  orders       Order[] @relation("OrderContractor")
+  subOrders    Order[] @relation("OrderSubcontractor")
+  invoices     Invoice[]
+  recurringOrders RecurringOrder[]
+
+  @@index([tenantId])
+  @@index([nip])
+}
+
+enum ContractorType {
+  CLIENT      // Klient
+  CARRIER     // Przewoznik
+  BOTH        // Oba
+}
+
+// ==================== DOCUMENTS ====================
+
+model Document {
+  id           String   @id @default(cuid())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+
+  type         DocumentType
+  name         String
+  description  String?
+  fileUrl      String
+  fileSize     Int?
+  mimeType     String?
+
+  // Expiry tracking
+  expiryDate   DateTime?
+  reminderSent Boolean @default(false)
+
+  // Relations
+  vehicleId    String?
+  vehicle      Vehicle? @relation(fields: [vehicleId], references: [id])
+  trailerId    String?
+  trailer      Trailer? @relation(fields: [trailerId], references: [id])
+  driverId     String?
+  driver       Driver?  @relation(fields: [driverId], references: [id])
+  orderId      String?
+  order        Order?   @relation(fields: [orderId], references: [id])
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([type])
+  @@index([expiryDate])
+}
+
+enum DocumentType {
+  // Vehicle
+  VEHICLE_REGISTRATION
+  VEHICLE_INSURANCE_OC
+  VEHICLE_INSURANCE_AC
+  VEHICLE_INSPECTION
+  TACHOGRAPH_CALIBRATION
+
+  // Driver
+  DRIVER_LICENSE
+  DRIVER_ADR
+  DRIVER_MEDICAL
+  DRIVER_PSYCHO
+  DRIVER_QUALIFICATION
+
+  // Company
+  COMPANY_LICENSE
+  COMPANY_INSURANCE
+  COMPANY_CERTIFICATE
+
+  // Order
+  CMR
+  DELIVERY_NOTE
+
+  OTHER
+}
+
+// ==================== NOTIFICATIONS ====================
+
+model Notification {
+  id           String   @id @default(cuid())
+  tenantId     String
+
+  // Recipient
+  userId       String?  // If null, notification is for all tenant users
+
+  // Content
+  type         NotificationType
+  title        String
+  message      String
+  data         Json?    // Additional data (e.g., related entity IDs)
+
+  // Related entities (optional)
+  vehicleId    String?
+  driverId     String?
+  orderId      String?
+  documentId   String?
+  invoiceId    String?
+
+  // Status
+  isRead       Boolean  @default(false)
+  readAt       DateTime?
+
+  // Email delivery
+  emailSent    Boolean  @default(false)
+  emailSentAt  DateTime?
+
+  // Scheduling
+  scheduledFor DateTime?
+
+  createdAt    DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([userId])
+  @@index([type])
+  @@index([isRead])
+  @@index([createdAt])
+}
+
+enum NotificationType {
+  // Document expiry
+  INSPECTION_EXPIRY       // Przegląd techniczny
+  INSURANCE_OC_EXPIRY     // Ubezpieczenie OC
+  INSURANCE_AC_EXPIRY     // Ubezpieczenie AC
+  LICENSE_EXPIRY          // Prawo jazdy
+  ADR_EXPIRY              // Certyfikat ADR
+  MEDICAL_EXPIRY          // Badania lekarskie
+  TACHOGRAPH_EXPIRY       // Kalibracja tachografu
+  DOCUMENT_EXPIRY         // Inne dokumenty
+
+  // Orders
+  NEW_ORDER               // Nowe zlecenie
+  ORDER_STATUS_CHANGE     // Zmiana statusu
+  ORDER_ASSIGNED          // Przypisano kierowcę
+
+  // Finance
+  INVOICE_OVERDUE         // Faktura przeterminowana
+  INVOICE_PAID            // Faktura opłacona
+
+  // Alerts
+  COST_ALERT              // Przekroczenie budżetu
+  SYSTEM_ALERT            // Alerty systemowe
+}
+
+model NotificationSettings {
+  id           String   @id @default(cuid())
+  tenantId     String
+  userId       String   @unique
+
+  // Email notifications
+  emailEnabled           Boolean @default(true)
+  emailInspectionExpiry  Boolean @default(true)
+  emailInsuranceExpiry   Boolean @default(true)
+  emailLicenseExpiry     Boolean @default(true)
+  emailNewOrder          Boolean @default(true)
+  emailOrderStatus       Boolean @default(false)
+  emailInvoiceOverdue    Boolean @default(true)
+
+  // Reminder days before expiry
+  reminderDays           Int     @default(30)
+  reminderSecondDays     Int     @default(7)
+
+  // Daily digest
+  dailyDigestEnabled     Boolean @default(false)
+  dailyDigestTime        String  @default("08:00")
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([tenantId])
+}
+
+// ==================== WEBHOOKS ====================
+
+model Webhook {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  name        String
+  url         String
+  secret      String   // For HMAC signature
+  events      String[] // ["order.created", "order.updated", "invoice.created", etc.]
+  isActive    Boolean  @default(true)
+  headers     Json?    // Custom headers
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deliveries  WebhookDelivery[]
+
+  @@index([tenantId])
+}
+
+model WebhookDelivery {
+  id          String   @id @default(cuid())
+  webhookId   String
+  webhook     Webhook  @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+  event       String
+  payload     Json
+  response    Json?
+  statusCode  Int?
+  success     Boolean  @default(false)
+  attempts    Int      @default(1)
+  error       String?
+  createdAt   DateTime @default(now())
+  deliveredAt DateTime?
+
+  @@index([webhookId, createdAt])
+}
+
+// ==================== AUDIT LOGS ====================
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id])
+  action      String   // CREATE, UPDATE, DELETE, LOGIN, LOGOUT, EXPORT, etc.
+  entityType  String   // Order, Invoice, Vehicle, Driver, etc.
+  entityId    String?
+  oldValues   Json?    // Old values before change
+  newValues   Json?    // New values after change
+  changes     Json?    // { field: { old: x, new: y } }
+  ipAddress   String?
+  userAgent   String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([tenantId, createdAt])
+  @@index([entityType, entityId])
+  @@index([userId])
+}
+
+// ==================== DRIVER MOBILE APP ====================
+
+// Zdjęcia dokumentacji zlecenia
+model OrderPhoto {
+  id          String   @id @default(cuid())
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  url         String
+  type        PhotoType @default(DOCUMENTATION)
+  uploadedBy  String?
+  uploadedByUser User? @relation(fields: [uploadedBy], references: [id])
+  createdAt   DateTime @default(now())
+
+  @@index([orderId])
+}
+
+enum PhotoType {
+  DOCUMENTATION
+  CMR
+  DAMAGE
+  LOADING
+  UNLOADING
+  OTHER
+}
+
+// Śledzenie lokalizacji GPS
+model OrderLocation {
+  id          String   @id @default(cuid())
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  latitude    Float
+  longitude   Float
+  speed       Float?   // m/s
+  accuracy    Float?
+  recordedAt  DateTime @default(now())
+
+  @@index([orderId, recordedAt])
+}
+
+// Tokeny push notifications
+model PushToken {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token       String
+  platform    String   @default("expo") // expo, fcm, apns
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+}
+
+// Zdjęcia pojazdów
+model VehiclePhoto {
+  id          String   @id @default(cuid())
+  vehicleId   String
+  vehicle     Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  url         String
+  description String?
+  isPrimary   Boolean  @default(false)
+  uploadedBy  String?
+  createdAt   DateTime @default(now())
+
+  @@index([vehicleId])
+}
+
+// Zdjęcia naczep
+model TrailerPhoto {
+  id          String   @id @default(cuid())
+  trailerId   String
+  trailer     Trailer  @relation(fields: [trailerId], references: [id], onDelete: Cascade)
+  url         String
+  description String?
+  isPrimary   Boolean  @default(false)
+  uploadedBy  String?
+  createdAt   DateTime @default(now())
+
+  @@index([trailerId])
+}
+
+// ==================== RECURRING ORDERS ====================
+
+enum RecurringFrequency {
+  DAILY
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+}
+
+// Zlecenia cykliczne - szablony
+model RecurringOrder {
+  id                    String   @id @default(cuid())
+  tenantId              String
+  tenant                Tenant   @relation(fields: [tenantId], references: [id])
+  
+  // Nazwa szablonu
+  name                  String
+  
+  // Harmonogram
+  frequency             RecurringFrequency
+  dayOfWeek             Int?     // 0-6 dla WEEKLY/BIWEEKLY (0 = niedziela)
+  dayOfMonth            Int?     // 1-31 dla MONTHLY
+  startDate             DateTime
+  endDate               DateTime?
+  nextGenerationDate    DateTime
+  
+  // Dane zlecenia (szablon)
+  type                  OrderType @default(OWN)
+  contractorId          String?
+  contractor            Contractor? @relation(fields: [contractorId], references: [id])
+  
+  origin                String
+  originCity            String?
+  originPostalCode      String?
+  originCountry         String   @default("PL")
+  destination           String
+  destinationCity       String?
+  destinationPostalCode String?
+  destinationCountry    String   @default("PL")
+  distanceKm            Float?
+  
+  loadingTimeFrom       String?
+  loadingTimeTo         String?
+  unloadingTimeFrom     String?
+  unloadingTimeTo       String?
+  
+  cargoDescription      String?
+  cargoWeight           Float?
+  cargoVolume           Float?
+  cargoPallets          Int?
+  requiresAdr           Boolean  @default(false)
+  
+  priceNet              Float?
+  currency              String   @default("PLN")
+  
+  notes                 String?
+  internalNotes         String?
+  
+  // Status
+  isActive              Boolean  @default(true)
+  generatedOrdersCount  Int      @default(0)
+  lastGeneratedAt       DateTime?
+  
+  createdById           String?
+  createdBy             User?    @relation(fields: [createdById], references: [id])
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  
+  @@index([tenantId])
+  @@index([isActive, nextGenerationDate])
+}

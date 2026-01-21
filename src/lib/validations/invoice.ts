@@ -1,0 +1,33 @@
+import { z } from "zod";
+
+export const invoiceItemSchema = z.object({
+  description: z.string().min(1, "Opis jest wymagany"),
+  quantity: z.number().positive().default(1),
+  unit: z.string().default("szt."),
+  unitPriceNet: z.number().min(0),
+  vatRate: z.number().min(-1).max(100).default(23), // -1 for "zw." (exempt)
+});
+
+export const invoiceSchema = z.object({
+  type: z.enum(["SINGLE", "COLLECTIVE", "PROFORMA", "CORRECTION"]).default("SINGLE"),
+  contractorId: z.string().min(1, "Kontrahent jest wymagany"),
+  issueDate: z.coerce.date(),
+  saleDate: z.coerce.date().optional().nullable(),
+  dueDate: z.coerce.date(),
+  paymentMethod: z.enum(["TRANSFER", "CASH", "CARD"]).default("TRANSFER"),
+  bankAccount: z.string().optional(),
+  currency: z.string().default("PLN"),
+  notes: z.string().optional(),
+  items: z.array(invoiceItemSchema).min(1, "Faktura musi zawierać co najmniej jedną pozycję"),
+  orderIds: z.array(z.string()).optional(), // For collective invoices
+  // Exchange rate fields (for foreign currencies)
+  exchangeRate: z.number().positive().optional().nullable(),
+  exchangeRateDate: z.coerce.date().optional().nullable(),
+  exchangeRateTable: z.string().optional().nullable(),
+  amountPln: z.number().positive().optional().nullable(),
+});
+
+export const invoiceUpdateSchema = invoiceSchema.partial();
+
+export type InvoiceItemInput = z.infer<typeof invoiceItemSchema>;
+export type InvoiceInput = z.infer<typeof invoiceSchema>;
