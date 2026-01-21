@@ -134,6 +134,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const { id } = await params;
     const body = await request.json();
 
+    // Extract waypoints from body
+    const { waypoints, ...orderData } = body;
+
     // Check if order exists and belongs to tenant
     const existingOrder = await prisma.order.findUnique({
       where: { id, tenantId: authResult.tenantId },
@@ -148,14 +151,14 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     // Check for duplicate order number if changed
     if (
-      body.orderNumber &&
-      body.orderNumber !== existingOrder.orderNumber
+      orderData.orderNumber &&
+      orderData.orderNumber !== existingOrder.orderNumber
     ) {
       const duplicateOrder = await prisma.order.findUnique({
         where: {
           tenantId_orderNumber: {
             tenantId: existingOrder.tenantId,
-            orderNumber: body.orderNumber,
+            orderNumber: orderData.orderNumber,
           },
         },
       });
@@ -168,136 +171,166 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    // Update order
-    const order = await prisma.order.update({
-      where: { id },
-      data: {
-        orderNumber: body.orderNumber ?? existingOrder.orderNumber,
-        externalNumber: body.externalNumber,
-        type: body.type as OrderType,
-        status: body.status as OrderStatus,
-        contractorId: body.contractorId,
-        subcontractorId: body.subcontractorId,
-        vehicleId: body.vehicleId,
-        trailerId: body.trailerId,
-        driverId: body.driverId,
-        origin: body.origin ?? existingOrder.origin,
-        originCity: body.originCity,
-        originCountry: body.originCountry ?? "PL",
-        destination: body.destination ?? existingOrder.destination,
-        destinationCity: body.destinationCity,
-        destinationCountry: body.destinationCountry ?? "PL",
-        distanceKm: body.distanceKm ? parseFloat(body.distanceKm) : null,
-        loadingDate: body.loadingDate
-          ? new Date(body.loadingDate)
-          : existingOrder.loadingDate,
-        loadingTimeFrom: body.loadingTimeFrom,
-        loadingTimeTo: body.loadingTimeTo,
-        unloadingDate: body.unloadingDate
-          ? new Date(body.unloadingDate)
-          : existingOrder.unloadingDate,
-        unloadingTimeFrom: body.unloadingTimeFrom,
-        unloadingTimeTo: body.unloadingTimeTo,
-        cargoDescription: body.cargoDescription,
-        cargoWeight: body.cargoWeight ? parseFloat(body.cargoWeight) : null,
-        cargoVolume: body.cargoVolume ? parseFloat(body.cargoVolume) : null,
-        cargoPallets: body.cargoPallets ? parseInt(body.cargoPallets, 10) : null,
-        cargoValue: body.cargoValue ? parseFloat(body.cargoValue) : null,
-        requiresAdr: body.requiresAdr ?? false,
-        priceNet: body.priceNet ? parseFloat(body.priceNet) : null,
-        currency: body.currency ?? "PLN",
-        costNet: body.costNet ? parseFloat(body.costNet) : null,
-        flatRateKm: body.flatRateKm ? parseFloat(body.flatRateKm) : null,
-        flatRateOverage: body.flatRateOverage
-          ? parseFloat(body.flatRateOverage)
-          : null,
-        kmLimit: body.kmLimit ? parseFloat(body.kmLimit) : null,
-        kmOverageRate: body.kmOverageRate
-          ? parseFloat(body.kmOverageRate)
-          : null,
-        notes: body.notes,
-        internalNotes: body.internalNotes,
-      },
-      include: {
-        contractor: {
-          select: {
-            id: true,
-            name: true,
-            shortName: true,
+    // Update order and waypoints in a transaction
+    const updatedOrder = await prisma.$transaction(async (tx) => {
+      // Delete existing STOP waypoints
+      await tx.waypoint.deleteMany({
+        where: {
+          orderId: id,
+          type: "STOP",
+        },
+      });
+
+      // Update order
+      const order = await tx.order.update({
+        where: { id },
+        data: {
+          orderNumber: orderData.orderNumber ?? existingOrder.orderNumber,
+          externalNumber: orderData.externalNumber,
+          type: orderData.type as OrderType,
+          status: orderData.status as OrderStatus,
+          contractorId: orderData.contractorId,
+          subcontractorId: orderData.subcontractorId,
+          vehicleId: orderData.vehicleId,
+          trailerId: orderData.trailerId,
+          driverId: orderData.driverId,
+          origin: orderData.origin ?? existingOrder.origin,
+          originCity: orderData.originCity,
+          originCountry: orderData.originCountry ?? "PL",
+          destination: orderData.destination ?? existingOrder.destination,
+          destinationCity: orderData.destinationCity,
+          destinationCountry: orderData.destinationCountry ?? "PL",
+          distanceKm: orderData.distanceKm ? parseFloat(orderData.distanceKm) : null,
+          loadingDate: orderData.loadingDate
+            ? new Date(orderData.loadingDate)
+            : existingOrder.loadingDate,
+          loadingTimeFrom: orderData.loadingTimeFrom,
+          loadingTimeTo: orderData.loadingTimeTo,
+          unloadingDate: orderData.unloadingDate
+            ? new Date(orderData.unloadingDate)
+            : existingOrder.unloadingDate,
+          unloadingTimeFrom: orderData.unloadingTimeFrom,
+          unloadingTimeTo: orderData.unloadingTimeTo,
+          cargoDescription: orderData.cargoDescription,
+          cargoWeight: orderData.cargoWeight ? parseFloat(orderData.cargoWeight) : null,
+          cargoVolume: orderData.cargoVolume ? parseFloat(orderData.cargoVolume) : null,
+          cargoPallets: orderData.cargoPallets ? parseInt(orderData.cargoPallets, 10) : null,
+          cargoValue: orderData.cargoValue ? parseFloat(orderData.cargoValue) : null,
+          requiresAdr: orderData.requiresAdr ?? false,
+          priceNet: orderData.priceNet ? parseFloat(orderData.priceNet) : null,
+          currency: orderData.currency ?? "PLN",
+          costNet: orderData.costNet ? parseFloat(orderData.costNet) : null,
+          flatRateKm: orderData.flatRateKm ? parseFloat(orderData.flatRateKm) : null,
+          flatRateOverage: orderData.flatRateOverage
+            ? parseFloat(orderData.flatRateOverage)
+            : null,
+          kmLimit: orderData.kmLimit ? parseFloat(orderData.kmLimit) : null,
+          kmOverageRate: orderData.kmOverageRate
+            ? parseFloat(orderData.kmOverageRate)
+            : null,
+          notes: orderData.notes,
+          internalNotes: orderData.internalNotes,
+        },
+        include: {
+          contractor: {
+            select: {
+              id: true,
+              name: true,
+              shortName: true,
+            },
+          },
+          driver: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+          vehicle: {
+            select: {
+              id: true,
+              registrationNumber: true,
+            },
+          },
+          trailer: {
+            select: {
+              id: true,
+              registrationNumber: true,
+            },
           },
         },
-        driver: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-          },
-        },
-        vehicle: {
-          select: {
-            id: true,
-            registrationNumber: true,
-          },
-        },
-        trailer: {
-          select: {
-            id: true,
-            registrationNumber: true,
-          },
-        },
-      },
+      });
+
+      // Create new waypoints if provided
+      if (waypoints && Array.isArray(waypoints) && waypoints.length > 0) {
+        await tx.waypoint.createMany({
+          data: waypoints.map((wp: any, index: number) => ({
+            orderId: id,
+            sequence: wp.sequence || index + 1,
+            type: "STOP",
+            address: wp.address,
+            city: wp.city || null,
+            country: wp.country || "PL",
+            scheduledDate: wp.scheduledDate ? new Date(wp.scheduledDate) : null,
+            scheduledTime: wp.scheduledTime || null,
+            notes: wp.notes || null,
+          })),
+        });
+      }
+
+      return order;
     });
 
     // Log audit
     const changes = getEntityChanges(
       existingOrder as unknown as Record<string, unknown>,
-      order as unknown as Record<string, unknown>
+      updatedOrder as unknown as Record<string, unknown>
     );
     await logAudit({
       tenantId: authResult.tenantId,
       userId: authResult.userId,
       action: "UPDATE",
       entityType: "Order",
-      entityId: order.id,
+      entityId: updatedOrder.id,
       changes,
-      metadata: { orderNumber: order.orderNumber },
+      metadata: { orderNumber: updatedOrder.orderNumber },
       request,
     });
 
     // Trigger webhook for order update
     triggerWebhook(authResult.tenantId, "order.updated", {
       order: {
-        id: order.id,
-        orderNumber: order.orderNumber,
-        status: order.status,
-        origin: order.origin,
-        destination: order.destination,
-        loadingDate: order.loadingDate,
-        unloadingDate: order.unloadingDate,
-        priceNet: order.priceNet,
-        currency: order.currency,
-        contractor: order.contractor,
-        driver: order.driver,
-        vehicle: order.vehicle,
+        id: updatedOrder.id,
+        orderNumber: updatedOrder.orderNumber,
+        status: updatedOrder.status,
+        origin: updatedOrder.origin,
+        destination: updatedOrder.destination,
+        loadingDate: updatedOrder.loadingDate,
+        unloadingDate: updatedOrder.unloadingDate,
+        priceNet: updatedOrder.priceNet,
+        currency: updatedOrder.currency,
+        contractor: updatedOrder.contractor,
+        driver: updatedOrder.driver,
+        vehicle: updatedOrder.vehicle,
       },
       changes,
     });
 
     // Check if status changed
-    if (existingOrder.status !== order.status) {
+    if (existingOrder.status !== updatedOrder.status) {
       triggerWebhook(authResult.tenantId, "order.status_changed", {
         order: {
-          id: order.id,
-          orderNumber: order.orderNumber,
-          origin: order.origin,
-          destination: order.destination,
+          id: updatedOrder.id,
+          orderNumber: updatedOrder.orderNumber,
+          origin: updatedOrder.origin,
+          destination: updatedOrder.destination,
         },
         previousStatus: existingOrder.status,
-        newStatus: order.status,
+        newStatus: updatedOrder.status,
       });
     }
 
-    return NextResponse.json(order);
+    return NextResponse.json(updatedOrder);
   } catch (error) {
     console.error("Error updating order:", error);
     return NextResponse.json(

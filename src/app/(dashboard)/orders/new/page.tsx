@@ -206,6 +206,8 @@ export default function NewOrderPage() {
     originLabel: string;
     destinationLabel: string;
   } | null>(null);
+  // Waypoints state
+  const [waypoints, setWaypoints] = useState<Array<{address: string; city: string; country: string}>>([]);
 
   // Resources
   const [contractors, setContractors] = useState<Contractor[]>([]);
@@ -402,6 +404,20 @@ export default function NewOrderPage() {
     );
   };
 
+
+  // Waypoint management functions
+  const addWaypoint = () => {
+    setWaypoints(prev => [...prev, { address: "", city: "", country: "PL" }]);
+  };
+
+  const removeWaypoint = (index: number) => {
+    setWaypoints(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const updateWaypoint = (index: number, field: "address" | "city" | "country", value: string) => {
+    setWaypoints(prev => prev.map((wp, i) => i === index ? { ...wp, [field]: value } : wp));
+  };
+
   // Get driver/vehicle/trailer names for display
   const getDriverName = (driverId: string) => {
     const driver = drivers.find((d) => d.id === driverId);
@@ -441,6 +457,11 @@ export default function NewOrderPage() {
           destination: `${formData.destination}, ${formData.destinationPostalCode || ""} ${formData.destinationCity || ""}, ${formData.destinationCountry}`.trim(),
           originCountry: formData.originCountry,
           destinationCountry: formData.destinationCountry,
+          waypoints: waypoints.filter(wp => wp.address.trim()).map(wp => ({
+            address: `${wp.address}, ${wp.city || ''}, ${wp.country}`.trim(),
+            country: wp.country || 'PL',
+          })),
+          profile: 'driving-hgv',
         }),
       });
 
@@ -560,6 +581,13 @@ export default function NewOrderPage() {
           trailerId: primaryAssignment?.trailerId || (formData.trailerId && formData.trailerId !== "none" ? formData.trailerId : null),
           // Multi-assignment array
           assignments: apiAssignments.length > 0 ? apiAssignments : undefined,
+          waypoints: waypoints.filter(wp => wp.address.trim()).map((wp, index) => ({
+            sequence: index + 1,
+            type: "STOP",
+            address: wp.address,
+            city: wp.city || null,
+            country: wp.country || "PL",
+          })),
         }),
       });
 
@@ -956,6 +984,88 @@ export default function NewOrderPage() {
                       />
                     </div>
                   </div>
+                </div>
+
+                <Separator />
+
+                
+                {/* Waypoints */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-semibold text-blue-600 flex items-center gap-2">
+                      <Route className="h-4 w-4" />
+                      Punkty posrednie (opcjonalne)
+                    </h3>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={addWaypoint}
+                    >
+                      <Plus className="h-4 w-4 mr-1" />
+                      Dodaj punkt
+                    </Button>
+                  </div>
+                  
+                  {waypoints.length > 0 && (
+                    <div className="space-y-3">
+                      {waypoints.map((wp, index) => (
+                        <div key={index} className="flex items-start gap-3 p-3 border rounded-lg bg-muted/30">
+                          <div className="flex items-center justify-center w-6 h-6 rounded-full bg-blue-100 text-blue-600 text-xs font-medium">
+                            {index + 1}
+                          </div>
+                          <div className="flex-1 grid gap-3 md:grid-cols-4">
+                            <div className="md:col-span-2">
+                              <Input
+                                placeholder="Adres"
+                                value={wp.address}
+                                onChange={(e) => updateWaypoint(index, "address", e.target.value)}
+                              />
+                            </div>
+                            <div>
+                              <Input
+                                placeholder="Miasto"
+                                value={wp.city}
+                                onChange={(e) => updateWaypoint(index, "city", e.target.value)}
+                              />
+                            </div>
+                            <div>
+                              <Select
+                                value={wp.country}
+                                onValueChange={(value) => updateWaypoint(index, "country", value)}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {countries.map((country) => (
+                                    <SelectItem key={country.code} value={country.code}>
+                                      {country.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                            onClick={() => removeWaypoint(index)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  
+                  {waypoints.length === 0 && (
+                    <p className="text-sm text-muted-foreground">
+                      Mozesz dodac punkty posrednie trasy, ktore zostana uwzglednione w obliczeniu dystansu.
+                    </p>
+                  )}
                 </div>
 
                 <Separator />
