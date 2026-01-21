@@ -33,6 +33,8 @@ export async function GET(request: NextRequest) {
     const dateFrom = searchParams.get("dateFrom");
     const dateTo = searchParams.get("dateTo");
     const search = searchParams.get("search");
+    const originSearch = searchParams.get("originSearch");
+    const destinationSearch = searchParams.get("destinationSearch");
     const page = parseInt(searchParams.get("page") || "1", 10);
     const limit = parseInt(searchParams.get("limit") || "20", 10);
     const sortBy = searchParams.get("sortBy") || "loadingDate";
@@ -67,6 +69,28 @@ export async function GET(request: NextRequest) {
       if (dateTo) {
         where.loadingDate.lte = new Date(dateTo);
       }
+    }
+
+    // Origin address filter
+    if (originSearch) {
+      where.AND = where.AND || [];
+      (where.AND as Prisma.OrderWhereInput[]).push({
+        OR: [
+          { origin: { contains: originSearch, mode: "insensitive" } },
+          { originCity: { contains: originSearch, mode: "insensitive" } },
+        ],
+      });
+    }
+
+    // Destination address filter
+    if (destinationSearch) {
+      where.AND = where.AND || [];
+      (where.AND as Prisma.OrderWhereInput[]).push({
+        OR: [
+          { destination: { contains: destinationSearch, mode: "insensitive" } },
+          { destinationCity: { contains: destinationSearch, mode: "insensitive" } },
+        ],
+      });
     }
 
     if (search) {

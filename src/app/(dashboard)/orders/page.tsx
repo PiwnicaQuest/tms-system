@@ -159,6 +159,13 @@ interface Vehicle {
   registrationNumber: string;
 }
 
+interface Contractor {
+  id: string;
+  name: string;
+  shortName: string | null;
+  type: "CLIENT" | "CARRIER" | "BOTH";
+}
+
 function OrdersPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -181,12 +188,18 @@ function OrdersPageContent() {
   const [vehicleId, setVehicleId] = useState(
     searchParams.get("vehicleId") || "all"
   );
+  const [contractorId, setContractorId] = useState(searchParams.get("contractorId") || "");
+  const [contractorSearch, setContractorSearch] = useState("");
+  const [showContractorSuggestions, setShowContractorSuggestions] = useState(false);
+  const [originSearch, setOriginSearch] = useState(searchParams.get("originSearch") || "");
+  const [destinationSearch, setDestinationSearch] = useState(searchParams.get("destinationSearch") || "");
   const [dateFrom, setDateFrom] = useState(searchParams.get("dateFrom") || "");
   const [dateTo, setDateTo] = useState(searchParams.get("dateTo") || "");
 
   // Resources for filters
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [contractors, setContractors] = useState<Contractor[]>([]);
 
   // Duplicate dialog state
   const [duplicateDialog, setDuplicateDialog] = useState<{
@@ -214,6 +227,9 @@ function OrdersPageContent() {
       if (vehicleId && vehicleId !== "all") params.set("vehicleId", vehicleId);
       if (dateFrom) params.set("dateFrom", dateFrom);
       if (dateTo) params.set("dateTo", dateTo);
+      if (contractorId) params.set("contractorId", contractorId);
+      if (originSearch) params.set("originSearch", originSearch);
+      if (destinationSearch) params.set("destinationSearch", destinationSearch);
 
       const response = await fetch(`/api/orders?${params.toString()}`);
       if (!response.ok) throw new Error("Failed to fetch orders");
@@ -226,15 +242,16 @@ function OrdersPageContent() {
     } finally {
       setLoading(false);
     }
-  }, [pagination.page, pagination.limit, search, status, driverId, vehicleId, dateFrom, dateTo]);
+  }, [pagination.page, pagination.limit, search, status, driverId, vehicleId, dateFrom, dateTo, contractorId, originSearch, destinationSearch]);
 
   // Fetch drivers and vehicles for filters
   useEffect(() => {
     const fetchResources = async () => {
       try {
-        const [driversRes, vehiclesRes] = await Promise.all([
+        const [driversRes, vehiclesRes, contractorsRes] = await Promise.all([
           fetch("/api/drivers?limit=100"),
           fetch("/api/vehicles?limit=100"),
+          fetch("/api/contractors?limit=200"),
         ]);
 
         if (driversRes.ok) {
@@ -245,6 +262,15 @@ function OrdersPageContent() {
         if (vehiclesRes.ok) {
           const data = await vehiclesRes.json();
           setVehicles(data.data || []);
+        }
+
+        if (contractorsRes.ok) {
+          const data = await contractorsRes.json();
+          // Filter to only CLIENT and BOTH types
+          const clientContractors = (data.data || []).filter(
+            (c: Contractor) => c.type === "CLIENT" || c.type === "BOTH"
+          );
+          setContractors(clientContractors);
         }
       } catch (error) {
         console.error("Error fetching resources:", error);
@@ -274,6 +300,10 @@ function OrdersPageContent() {
     setVehicleId("all");
     setDateFrom("");
     setDateTo("");
+    setContractorId("");
+    setContractorSearch("");
+    setOriginSearch("");
+    setDestinationSearch("");
     setPagination((prev) => ({ ...prev, page: 1 }));
   };
 
@@ -437,78 +467,170 @@ function OrdersPageContent() {
 
             {/* Extended Filters */}
             {showFilters && (
-              <div className="grid gap-4 md:grid-cols-5 pt-4 border-t">
-                <div className="space-y-2">
-                  <Label>Status</Label>
-                  <Select value={status} onValueChange={setStatus}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Wszystkie" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Wszystkie</SelectItem>
-                      {Object.entries(statusLabels).map(([key, label]) => (
-                        <SelectItem key={key} value={key}>
-                          {label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+              <div className="space-y-4 pt-4 border-t">
+                {/* Row 1: Status, Driver, Vehicle, Contractor */}
+                <div className="grid gap-4 md:grid-cols-4">
+                  <div className="space-y-2">
+                    <Label>Status</Label>
+                    <Select value={status} onValueChange={setStatus}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Wszystkie" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Wszystkie</SelectItem>
+                        {Object.entries(statusLabels).map(([key, label]) => (
+                          <SelectItem key={key} value={key}>
+                            {label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Kierowca</Label>
+                    <Select value={driverId} onValueChange={setDriverId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Wszyscy" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Wszyscy</SelectItem>
+                        {drivers.map((driver) => (
+                          <SelectItem key={driver.id} value={driver.id}>
+                            {driver.firstName} {driver.lastName}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Pojazd</Label>
+                    <Select value={vehicleId} onValueChange={setVehicleId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Wszystkie" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Wszystkie</SelectItem>
+                        {vehicles.map((vehicle) => (
+                          <SelectItem key={vehicle.id} value={vehicle.id}>
+                            {vehicle.registrationNumber}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Contractor Combobox with search */}
+                  <div className="space-y-2 relative">
+                    <Label>Klient</Label>
+                    <div className="relative">
+                      <Input
+                        placeholder="Wpisz nazwe klienta..."
+                        value={contractorSearch}
+                        onChange={(e) => {
+                          setContractorSearch(e.target.value);
+                          setShowContractorSuggestions(true);
+                          if (!e.target.value) {
+                            setContractorId("");
+                          }
+                        }}
+                        onFocus={() => setShowContractorSuggestions(true)}
+                        onBlur={() => setTimeout(() => setShowContractorSuggestions(false), 200)}
+                      />
+                      {contractorId && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6"
+                          onClick={() => {
+                            setContractorId("");
+                            setContractorSearch("");
+                          }}
+                        >
+                          <X className="h-3 w-3" />
+                        </Button>
+                      )}
+                    </div>
+                    {showContractorSuggestions && contractorSearch && (
+                      <div className="absolute z-50 w-full mt-1 bg-popover border rounded-md shadow-md max-h-60 overflow-auto">
+                        {contractors
+                          .filter(c => 
+                            c.name.toLowerCase().includes(contractorSearch.toLowerCase()) ||
+                            (c.shortName && c.shortName.toLowerCase().includes(contractorSearch.toLowerCase()))
+                          )
+                          .slice(0, 10)
+                          .map((contractor) => (
+                            <div
+                              key={contractor.id}
+                              className="px-3 py-2 hover:bg-accent cursor-pointer text-sm"
+                              onMouseDown={() => {
+                                setContractorId(contractor.id);
+                                setContractorSearch(contractor.shortName || contractor.name);
+                                setShowContractorSuggestions(false);
+                              }}
+                            >
+                              {contractor.shortName || contractor.name}
+                              {contractor.shortName && (
+                                <span className="text-muted-foreground ml-2">({contractor.name})</span>
+                              )}
+                            </div>
+                          ))}
+                        {contractors.filter(c => 
+                          c.name.toLowerCase().includes(contractorSearch.toLowerCase()) ||
+                          (c.shortName && c.shortName.toLowerCase().includes(contractorSearch.toLowerCase()))
+                        ).length === 0 && (
+                          <div className="px-3 py-2 text-sm text-muted-foreground">
+                            Nie znaleziono klientow
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label>Kierowca</Label>
-                  <Select value={driverId} onValueChange={setDriverId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Wszyscy" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Wszyscy</SelectItem>
-                      {drivers.map((driver) => (
-                        <SelectItem key={driver.id} value={driver.id}>
-                          {driver.firstName} {driver.lastName}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                {/* Row 2: Origin, Destination, Date From, Date To */}
+                <div className="grid gap-4 md:grid-cols-4">
+                  <div className="space-y-2">
+                    <Label>Adres zaladunku</Label>
+                    <Input
+                      placeholder="Szukaj adresu/miasta..."
+                      value={originSearch}
+                      onChange={(e) => setOriginSearch(e.target.value)}
+                    />
+                  </div>
 
-                <div className="space-y-2">
-                  <Label>Pojazd</Label>
-                  <Select value={vehicleId} onValueChange={setVehicleId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Wszystkie" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Wszystkie</SelectItem>
-                      {vehicles.map((vehicle) => (
-                        <SelectItem key={vehicle.id} value={vehicle.id}>
-                          {vehicle.registrationNumber}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                  <div className="space-y-2">
+                    <Label>Adres rozladunku</Label>
+                    <Input
+                      placeholder="Szukaj adresu/miasta..."
+                      value={destinationSearch}
+                      onChange={(e) => setDestinationSearch(e.target.value)}
+                    />
+                  </div>
 
-                <div className="space-y-2">
-                  <Label>Data od</Label>
-                  <Input
-                    type="date"
-                    value={dateFrom}
-                    onChange={(e) => setDateFrom(e.target.value)}
-                  />
-                </div>
+                  <div className="space-y-2">
+                    <Label>Data od</Label>
+                    <Input
+                      type="date"
+                      value={dateFrom}
+                      onChange={(e) => setDateFrom(e.target.value)}
+                    />
+                  </div>
 
-                <div className="space-y-2">
-                  <Label>Data do</Label>
-                  <Input
-                    type="date"
-                    value={dateTo}
-                    onChange={(e) => setDateTo(e.target.value)}
-                  />
+                  <div className="space-y-2">
+                    <Label>Data do</Label>
+                    <Input
+                      type="date"
+                      value={dateTo}
+                      onChange={(e) => setDateTo(e.target.value)}
+                    />
+                  </div>
                 </div>
 
                 {hasActiveFilters && (
-                  <div className="md:col-span-5 flex justify-end">
+                  <div className="flex justify-end">
                     <Button
                       type="button"
                       variant="ghost"
