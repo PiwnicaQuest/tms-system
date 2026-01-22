@@ -16,6 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ImageThumbnail } from "@/components/ui/image-upload";
+import { DocumentUploadDialog, documentTypeLabels } from "@/components/ui/document-upload-dialog";
 import {
   Container,
   ArrowLeft,
@@ -27,6 +28,7 @@ import {
   Package,
   Scale,
   Box,
+  Plus,
 } from "lucide-react";
 
 type TrailerStatus = "ACTIVE" | "IN_SERVICE" | "INACTIVE" | "SOLD";
@@ -143,34 +145,35 @@ export default function TrailerDetailPage({ params }: PageProps) {
   const [trailer, setTrailer] = useState<Trailer | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showDocumentDialog, setShowDocumentDialog] = useState(false);
+
+  const fetchTrailer = async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`/api/trailers/${resolvedParams.id}`);
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          setError("Naczepa nie została znaleziona");
+        } else {
+          throw new Error("Failed to fetch trailer");
+        }
+        return;
+      }
+
+      const data = await response.json();
+      setTrailer(data.data);
+    } catch (err) {
+      console.error("Error fetching trailer:", err);
+      setError("Wystąpił błąd podczas pobierania naczepy");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchTrailer = async () => {
-      setLoading(true);
-      setError(null);
-
-      try {
-        const response = await fetch(`/api/trailers/${resolvedParams.id}`);
-
-        if (!response.ok) {
-          if (response.status === 404) {
-            setError("Naczepa nie została znaleziona");
-          } else {
-            throw new Error("Failed to fetch trailer");
-          }
-          return;
-        }
-
-        const data = await response.json();
-        setTrailer(data.data);
-      } catch (err) {
-        console.error("Error fetching trailer:", err);
-        setError("Wystąpił błąd podczas pobierania naczepy");
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchTrailer();
   }, [resolvedParams.id]);
 
@@ -469,8 +472,12 @@ export default function TrailerDetailPage({ params }: PageProps) {
 
         <TabsContent value="documents">
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle>Dokumenty</CardTitle>
+              <Button onClick={() => setShowDocumentDialog(true)}>
+                <Plus className="mr-2 h-4 w-4" />
+                Dodaj dokument
+              </Button>
             </CardHeader>
             <CardContent>
               {(!trailer.documents || trailer.documents.length === 0) ? (
@@ -498,7 +505,7 @@ export default function TrailerDetailPage({ params }: PageProps) {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Badge variant="outline">{doc.type}</Badge>
+                          <Badge variant="outline">{documentTypeLabels[doc.type] || doc.type}</Badge>
                         </TableCell>
                         <TableCell>
                           {doc.expiryDate ? (
@@ -542,6 +549,18 @@ export default function TrailerDetailPage({ params }: PageProps) {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Document Upload Dialog */}
+      {trailer && (
+        <DocumentUploadDialog
+          open={showDocumentDialog}
+          onOpenChange={setShowDocumentDialog}
+          entityType="trailer"
+          entityId={trailer.id}
+          entityName={trailer.registrationNumber}
+          onSuccess={fetchTrailer}
+        />
+      )}
     </div>
   );
 }

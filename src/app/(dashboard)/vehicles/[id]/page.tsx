@@ -15,6 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { DocumentUploadDialog, documentTypeLabels } from "@/components/ui/document-upload-dialog";
 import {
   Truck,
   ArrowLeft,
@@ -184,35 +185,37 @@ export default function VehicleDetailPage({ params }: PageProps) {
   const [vehicle, setVehicle] = useState<Vehicle | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showDocumentDialog, setShowDocumentDialog] = useState(false);
 
-  // Fetch vehicle
-  useEffect(() => {
-    const fetchVehicle = async () => {
-      setLoading(true);
-      setError(null);
+  // Fetch vehicle function
+  const fetchVehicle = async () => {
+    setLoading(true);
+    setError(null);
 
-      try {
-        const response = await fetch(`/api/vehicles/${resolvedParams.id}`);
+    try {
+      const response = await fetch(`/api/vehicles/${resolvedParams.id}`);
 
-        if (!response.ok) {
-          if (response.status === 404) {
-            setError("Pojazd nie zostal znaleziony");
-          } else {
-            throw new Error("Failed to fetch vehicle");
-          }
-          return;
+      if (!response.ok) {
+        if (response.status === 404) {
+          setError("Pojazd nie zostal znaleziony");
+        } else {
+          throw new Error("Failed to fetch vehicle");
         }
-
-        const data = await response.json();
-        setVehicle(data.data);
-      } catch (err) {
-        console.error("Error fetching vehicle:", err);
-        setError("Wystapil blad podczas pobierania pojazdu");
-      } finally {
-        setLoading(false);
+        return;
       }
-    };
 
+      const data = await response.json();
+      setVehicle(data.data);
+    } catch (err) {
+      console.error("Error fetching vehicle:", err);
+      setError("Wystapil blad podczas pobierania pojazdu");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Fetch vehicle on mount
+  useEffect(() => {
     fetchVehicle();
   }, [resolvedParams.id]);
 
@@ -634,7 +637,7 @@ export default function VehicleDetailPage({ params }: PageProps) {
                 <FileText className="h-5 w-5" />
                 Dokumenty
               </CardTitle>
-              <Button>
+              <Button onClick={() => setShowDocumentDialog(true)}>
                 <Plus className="mr-2 h-4 w-4" />
                 Dodaj dokument
               </Button>
@@ -665,7 +668,7 @@ export default function VehicleDetailPage({ params }: PageProps) {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Badge variant="outline">{doc.type}</Badge>
+                          <Badge variant="outline">{documentTypeLabels[doc.type] || doc.type}</Badge>
                         </TableCell>
                         <TableCell>
                           {doc.expiryDate ? (
@@ -709,6 +712,18 @@ export default function VehicleDetailPage({ params }: PageProps) {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Document Upload Dialog */}
+      {vehicle && (
+        <DocumentUploadDialog
+          open={showDocumentDialog}
+          onOpenChange={setShowDocumentDialog}
+          entityType="vehicle"
+          entityId={vehicle.id}
+          entityName={vehicle.registrationNumber}
+          onSuccess={fetchVehicle}
+        />
+      )}
     </div>
   );
 }
