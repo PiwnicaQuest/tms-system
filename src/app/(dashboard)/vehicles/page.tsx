@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ImageUpload, ImageThumbnail } from "@/components/ui/image-upload";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -103,6 +104,7 @@ interface Vehicle {
   currentTrailerId: string | null;
   notes: string | null;
   isActive: boolean;
+  imageUrl: string | null;
 }
 
 interface VehiclesResponse {
@@ -128,6 +130,7 @@ const initialFormData = {
   euroClass: "",
   fuelType: "DIESEL" as FuelType,
   notes: "",
+  imageUrl: null as string | null,
 };
 
 export default function VehiclesPage() {
@@ -243,6 +246,7 @@ export default function VehiclesPage() {
       euroClass: vehicle.euroClass || "",
       fuelType: vehicle.fuelType || "DIESEL",
       notes: vehicle.notes || "",
+      imageUrl: vehicle.imageUrl || null,
     });
     setFormErrors({});
     setShowDialog(true);
@@ -316,6 +320,7 @@ export default function VehiclesPage() {
         euroClass: formData.euroClass || null,
         fuelType: formData.fuelType,
         notes: formData.notes || null,
+        imageUrl: formData.imageUrl || null,
       };
 
       const url = editingVehicle
@@ -375,6 +380,7 @@ export default function VehiclesPage() {
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-[60px]">Zdjęcie</TableHead>
               <TableHead>Nr rejestracyjny</TableHead>
               <TableHead>Marka / Model</TableHead>
               <TableHead>Typ</TableHead>
@@ -387,6 +393,14 @@ export default function VehiclesPage() {
           <TableBody>
             {vehicles.map((vehicle) => (
               <TableRow key={vehicle.id} className={!vehicle.isActive ? "opacity-60" : ""}>
+                <TableCell className="w-[60px]">
+                  <ImageThumbnail
+                    src={vehicle.imageUrl}
+                    alt={vehicle.registrationNumber}
+                    fallbackIcon={<Truck className="h-4 w-4" />}
+                    size="sm"
+                  />
+                </TableCell>
                 <TableCell>
                   <Link
                     href={`/vehicles/${vehicle.id}`}
@@ -875,6 +889,17 @@ export default function VehiclesPage() {
                     setFormData({ ...formData, notes: e.target.value })
                   }
                   placeholder="Dodatkowe informacje..."
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Zdjęcie pojazdu</Label>
+                <ImageUpload
+                  value={formData.imageUrl}
+                  onChange={(url) => setFormData({ ...formData, imageUrl: url })}
+                  entityType="vehicle"
+                  entityId={editingVehicle?.id}
+                  disabled={formLoading}
                 />
               </div>
             </div>

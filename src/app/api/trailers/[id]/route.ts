@@ -17,6 +17,7 @@ const trailerUpdateSchema = z.object({
   status: z.nativeEnum(VehicleStatus).optional(),
   notes: z.string().optional().nullable(),
   isActive: z.boolean().optional(),
+  imageUrl: z.string().optional().nullable(),
 });
 
 const idSchema = z.string().min(1, "ID jest wymagane");

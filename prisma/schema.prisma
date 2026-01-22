@@ -211,6 +211,7 @@ model Vehicle {
   lastGpsUpdate     DateTime?
 
   notes             String?
+  imageUrl          String?   // URL zdjecia pojazdu
   isActive          Boolean  @default(true)
 
   createdAt         DateTime @default(now())
@@ -273,6 +274,7 @@ model Trailer {
 
   status            VehicleStatus @default(ACTIVE)
   notes             String?
+  imageUrl          String?   // URL zdjecia naczepy
   isActive          Boolean  @default(true)
 
   createdAt         DateTime @default(now())

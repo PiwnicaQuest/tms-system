@@ -24,6 +24,7 @@ const vehicleUpdateSchema = z.object({
   lastLongitude: z.number().optional().nullable(),
   lastGpsUpdate: z.coerce.date().optional().nullable(),
   notes: z.string().optional().nullable(),
+  imageUrl: z.string().optional().nullable(),
   isActive: z.boolean().optional(),
 });
 

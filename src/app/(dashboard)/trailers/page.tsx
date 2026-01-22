@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
+import { ImageUpload, ImageThumbnail } from "@/components/ui/image-upload";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -92,6 +93,7 @@ interface Trailer {
   adrClasses: string | null;
   notes?: string | null;
   isActive: boolean;
+  imageUrl: string | null;
 }
 
 interface TrailersResponse {
@@ -115,6 +117,7 @@ const initialFormData = {
   axles: "3",
   adrClasses: "",
   notes: "",
+  imageUrl: null as string | null,
 };
 
 export default function TrailersPage() {
@@ -221,6 +224,7 @@ export default function TrailersPage() {
       axles: trailer.axles?.toString() || "3",
       adrClasses: trailer.adrClasses || "",
       notes: trailer.notes || "",
+      imageUrl: trailer.imageUrl || null,
     });
     setFormErrors({});
     setShowDialog(true);
@@ -291,6 +295,7 @@ export default function TrailersPage() {
         axles: formData.axles ? parseInt(formData.axles) : null,
         adrClasses: formData.adrClasses || null,
         notes: formData.notes || null,
+        imageUrl: formData.imageUrl || null,
       };
 
       const url = editingTrailer
@@ -351,6 +356,7 @@ export default function TrailersPage() {
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-[60px]">Zdjęcie</TableHead>
               <TableHead>Nr rejestracyjny</TableHead>
               <TableHead>Typ</TableHead>
               <TableHead>Marka</TableHead>
@@ -365,6 +371,14 @@ export default function TrailersPage() {
           <TableBody>
             {trailers.map((trailer) => (
               <TableRow key={trailer.id} className={!trailer.isActive ? "opacity-60" : ""}>
+                <TableCell className="w-[60px]">
+                  <ImageThumbnail
+                    src={trailer.imageUrl}
+                    alt={trailer.registrationNumber}
+                    fallbackIcon={<Container className="h-4 w-4" />}
+                    size="sm"
+                  />
+                </TableCell>
                 <TableCell>
                   <Link
                     href={`/trailers/${trailer.id}`}
@@ -834,6 +848,17 @@ export default function TrailersPage() {
                     setFormData({ ...formData, notes: e.target.value })
                   }
                   placeholder="Dodatkowe informacje..."
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Zdjęcie naczepy</Label>
+                <ImageUpload
+                  value={formData.imageUrl}
+                  onChange={(url) => setFormData({ ...formData, imageUrl: url })}
+                  entityType="trailer"
+                  entityId={editingTrailer?.id}
+                  disabled={formLoading}
                 />
               </div>
             </div>

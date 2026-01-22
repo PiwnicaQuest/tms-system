@@ -17,6 +17,7 @@ const trailerCreateSchema = z.object({
   status: z.nativeEnum(VehicleStatus).default(VehicleStatus.ACTIVE),
   notes: z.string().optional().nullable(),
   isActive: z.boolean().default(true),
+  imageUrl: z.string().optional().nullable(),
 });
 
 const trailerQuerySchema = z.object({
@@ -141,6 +142,7 @@ export async function GET(request: NextRequest) {
           status: true,
           notes: true,
           isActive: true,
+          imageUrl: true,
           createdAt: true,
           updatedAt: true,
         },

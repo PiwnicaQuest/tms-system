@@ -21,6 +21,7 @@ const vehicleCreateSchema = z.object({
   currentDriverId: z.string().optional().nullable(),
   currentTrailerId: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
+  imageUrl: z.string().optional().nullable(),
   isActive: z.boolean().default(true),
 });
 
@@ -148,6 +149,7 @@ export async function GET(request: NextRequest) {
           lastLongitude: true,
           lastGpsUpdate: true,
           notes: true,
+          imageUrl: true,
           isActive: true,
           createdAt: true,
           updatedAt: true,
