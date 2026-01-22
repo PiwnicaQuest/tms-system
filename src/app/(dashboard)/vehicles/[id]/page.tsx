@@ -16,6 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { DocumentUploadDialog, documentTypeLabels } from "@/components/ui/document-upload-dialog";
+import { CostAddDialog, costCategoryLabels } from "@/components/ui/cost-add-dialog";
 import {
   Truck,
   ArrowLeft,
@@ -186,6 +187,7 @@ export default function VehicleDetailPage({ params }: PageProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showDocumentDialog, setShowDocumentDialog] = useState(false);
+  const [showCostDialog, setShowCostDialog] = useState(false);
 
   // Fetch vehicle function
   const fetchVehicle = async () => {
@@ -290,7 +292,7 @@ export default function VehicleDetailPage({ params }: PageProps) {
             </p>
           </div>
         </div>
-        <Button asChild>
+        <Button onClick={() => setShowCostDialog(true)}>
           <Link href={`/vehicles/${vehicle.id}/edit`}>
             <Edit className="mr-2 h-4 w-4" />
             Edytuj
@@ -582,11 +584,9 @@ export default function VehicleDetailPage({ params }: PageProps) {
                 <Wrench className="h-5 w-5" />
                 Koszty
               </CardTitle>
-              <Button asChild>
-                <Link href={`/costs/new?vehicleId=${vehicle.id}`}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Dodaj koszt
-                </Link>
+              <Button onClick={() => setShowCostDialog(true)}>
+                <Plus className="mr-2 h-4 w-4" />
+                Dodaj koszt
               </Button>
             </CardHeader>
             <CardContent>
@@ -612,7 +612,7 @@ export default function VehicleDetailPage({ params }: PageProps) {
                           {formatDate(cost.date)}
                         </TableCell>
                         <TableCell>
-                          <Badge variant="outline">{cost.category}</Badge>
+                          <Badge variant="outline">{costCategoryLabels[cost.category] || cost.category}</Badge>
                         </TableCell>
                         <TableCell className="max-w-[250px]">
                           {cost.description || "-"}
@@ -718,6 +718,18 @@ export default function VehicleDetailPage({ params }: PageProps) {
         <DocumentUploadDialog
           open={showDocumentDialog}
           onOpenChange={setShowDocumentDialog}
+          entityType="vehicle"
+          entityId={vehicle.id}
+          entityName={vehicle.registrationNumber}
+          onSuccess={fetchVehicle}
+        />
+      )}
+
+      {/* Cost Add Dialog */}
+      {vehicle && (
+        <CostAddDialog
+          open={showCostDialog}
+          onOpenChange={setShowCostDialog}
           entityType="vehicle"
           entityId={vehicle.id}
           entityName={vehicle.registrationNumber}

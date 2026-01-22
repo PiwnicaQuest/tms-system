@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -16,20 +16,23 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { CostAddDialog, costCategoryLabels } from "@/components/ui/cost-add-dialog";
 import {
   Calculator,
   Users,
@@ -39,153 +42,176 @@ import {
   Calendar,
   TrendingUp,
   Loader2,
+  Search,
+  Trash2,
+  ChevronLeft,
+  ChevronRight,
+  Fuel,
+  Wrench,
+  Shield,
+  FileText,
 } from "lucide-react";
 
-// Mock data - will be replaced with real data from API
-const driverMonthlyData = [
-  {
-    id: "1",
-    driver: "Adam Dobkowski",
-    workDays: 22,
-    totalRevenue: 41832.42,
-    avgDaily: 1901.47,
-    orders: 28,
-  },
-  {
-    id: "2",
-    driver: "Michał Kowalski",
-    workDays: 20,
-    totalRevenue: 38450.00,
-    avgDaily: 1922.50,
-    orders: 25,
-  },
-  {
-    id: "3",
-    driver: "Piotr Zaroślinski",
-    workDays: 21,
-    totalRevenue: 35200.00,
-    avgDaily: 1676.19,
-    orders: 24,
-  },
-  {
-    id: "4",
-    driver: "Jan Wiśniewski",
-    workDays: 19,
-    totalRevenue: 32100.00,
-    avgDaily: 1689.47,
-    orders: 22,
-  },
-];
+// Types
+interface Cost {
+  id: string;
+  category: string;
+  description: string | null;
+  amount: number;
+  currency: string;
+  date: string;
+  vehicleId: string | null;
+  driverId: string | null;
+  orderId: string | null;
+  attachmentUrl: string | null;
+  notes: string | null;
+  vehicle: { id: string; registrationNumber: string } | null;
+  driver: { id: string; firstName: string; lastName: string } | null;
+}
 
-const vehicleMonthlyData = [
-  {
-    id: "1",
-    vehicle: "WGM1068L",
-    operatingDays: 24,
-    revenue: 52400.00,
-    fuelCost: 8500.00,
-    otherCost: 2200.00,
-    profit: 41700.00,
-    margin: 79.6,
-    driversCount: 2,
-  },
-  {
-    id: "2",
-    vehicle: "DSR50038",
-    operatingDays: 22,
-    revenue: 45200.00,
-    fuelCost: 7800.00,
-    otherCost: 1800.00,
-    profit: 35600.00,
-    margin: 78.8,
-    driversCount: 3,
-  },
-  {
-    id: "3",
-    vehicle: "PZ057XE",
-    operatingDays: 20,
-    revenue: 38900.00,
-    fuelCost: 6900.00,
-    otherCost: 1500.00,
-    profit: 30500.00,
-    margin: 78.4,
-    driversCount: 2,
-  },
-];
+interface CostsResponse {
+  data: Cost[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+  summary: {
+    categoryTotals: Record<string, number>;
+    total: number;
+  };
+}
 
-const dailyRecords = [
-  {
-    id: "1",
-    date: "2026-01-15",
-    driver: "Adam Dobkowski",
-    vehicle: "WGM1068L",
-    route: "Jarosty - Bydgoszcz ; Bydgoszcz - Łódź",
-    client: "RHENUS / MIO",
-    amount: 2185.00,
-    share: 100,
-  },
-  {
-    id: "2",
-    date: "2026-01-14",
-    driver: "Adam Dobkowski",
-    vehicle: "WGM1068L",
-    route: "Jarosty - Bydgoszcz ; Bydgoszcz - Łódź",
-    client: "RHENUS / ICEL",
-    amount: 2185.00,
-    share: 100,
-  },
-  {
-    id: "3",
-    date: "2026-01-13",
-    driver: "Adam Dobkowski",
-    vehicle: "WGM1068L",
-    route: "Jarosty - Wrocław (pół trasy)",
-    client: "RHENUS",
-    amount: 535.00,
-    share: 50,
-    note: "Reszta u Michała",
-  },
-  {
-    id: "4",
-    date: "2026-01-13",
-    driver: "Michał Kowalski",
-    vehicle: "PZ057XE",
-    route: "Łagiewniki - Wrocław (dokończenie)",
-    client: "RHENUS",
-    amount: 535.00,
-    share: 50,
-    note: "Dociągnięcie od Adama",
-  },
-];
+// Category icons
+const categoryIcons: Record<string, React.ReactNode> = {
+  FUEL: <Fuel className="h-4 w-4" />,
+  SERVICE: <Wrench className="h-4 w-4" />,
+  TOLL: <FileText className="h-4 w-4" />,
+  INSURANCE: <Shield className="h-4 w-4" />,
+  PARKING: <FileText className="h-4 w-4" />,
+  FINE: <FileText className="h-4 w-4" />,
+  SALARY: <Users className="h-4 w-4" />,
+  TAX: <FileText className="h-4 w-4" />,
+  OFFICE: <FileText className="h-4 w-4" />,
+  OTHER: <FileText className="h-4 w-4" />,
+};
+
+// Format date helper
+const formatDate = (dateString: string) => {
+  return new Date(dateString).toLocaleDateString("pl-PL", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+};
+
+// Format currency helper
+const formatCurrency = (amount: number, currency: string = "PLN") => {
+  return new Intl.NumberFormat("pl-PL", {
+    style: "currency",
+    currency,
+  }).format(amount);
+};
 
 export default function CostsPage() {
-  const [showAddDialog, setShowAddDialog] = useState(false);
-  const [formLoading, setFormLoading] = useState(false);
-  const [formData, setFormData] = useState({
-    date: "",
-    driver: "",
-    vehicle: "",
-    route: "",
-    client: "",
-    amount: "",
-    share: "100",
-    note: "",
+  const [costs, setCosts] = useState<Cost[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 20,
+    total: 0,
+    totalPages: 0,
   });
+  const [summary, setSummary] = useState<{
+    categoryTotals: Record<string, number>;
+    total: number;
+  }>({ categoryTotals: {}, total: 0 });
+  
+  // Filters
+  const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [dateRange, setDateRange] = useState({
+    startDate: "",
+    endDate: "",
+  });
+  
+  // Dialogs
+  const [showAddDialog, setShowAddDialog] = useState(false);
+  const [deletingCostId, setDeletingCostId] = useState<string | null>(null);
 
-  // Export to Excel/CSV
-  const handleExportExcel = () => {
-    const headers = ["Data", "Kierowca", "Pojazd", "Trasa", "Klient", "Udzial", "Kwota"];
+  // Fetch costs
+  const fetchCosts = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      params.set("page", pagination.page.toString());
+      params.set("limit", pagination.limit.toString());
+      
+      if (categoryFilter !== "all") {
+        params.set("category", categoryFilter);
+      }
+      if (dateRange.startDate) {
+        params.set("startDate", dateRange.startDate);
+      }
+      if (dateRange.endDate) {
+        params.set("endDate", dateRange.endDate);
+      }
+
+      const res = await fetch(`/api/costs?${params.toString()}`);
+      if (!res.ok) throw new Error("Failed to fetch costs");
+      
+      const data: CostsResponse = await res.json();
+      setCosts(data.data);
+      setPagination((prev) => ({
+        ...prev,
+        total: data.pagination.total,
+        totalPages: data.pagination.totalPages,
+      }));
+      setSummary(data.summary);
+    } catch (error) {
+      console.error("Error fetching costs:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, [pagination.page, pagination.limit, categoryFilter, dateRange.startDate, dateRange.endDate]);
+
+  useEffect(() => {
+    fetchCosts();
+  }, [fetchCosts]);
+
+  // Delete cost
+  const handleDeleteCost = async () => {
+    if (!deletingCostId) return;
+    
+    try {
+      const res = await fetch(`/api/costs/${deletingCostId}`, {
+        method: "DELETE",
+      });
+      
+      if (!res.ok) throw new Error("Failed to delete cost");
+      
+      setDeletingCostId(null);
+      fetchCosts();
+    } catch (error) {
+      console.error("Error deleting cost:", error);
+      alert("Nie udało się usunąć kosztu");
+    }
+  };
+
+  // Export to CSV
+  const handleExportCSV = () => {
+    const headers = ["Data", "Kategoria", "Opis", "Pojazd", "Kierowca", "Kwota"];
     const csvContent = [
       headers.join(";"),
-      ...dailyRecords.map((record) =>
+      ...costs.map((cost) =>
         [
-          record.date,
-          record.driver,
-          record.vehicle,
-          record.route,
-          record.client,
-          `${record.share}%`,
-          `${record.amount.toFixed(2).replace(".", ",")} zl`,
+          formatDate(cost.date),
+          costCategoryLabels[cost.category] || cost.category,
+          cost.description || "",
+          cost.vehicle?.registrationNumber || "",
+          cost.driver ? `${cost.driver.firstName} ${cost.driver.lastName}` : "",
+          `${cost.amount.toFixed(2).replace(".", ",")} ${cost.currency}`,
         ].join(";")
       ),
     ].join("\n");
@@ -196,47 +222,28 @@ export default function CostsPage() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `rozliczenia-${new Date().toISOString().split("T")[0]}.csv`;
+    link.download = `koszty-${new Date().toISOString().split("T")[0]}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
   };
 
-  // Handle form input change
-  const handleFormChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
-  };
+  // Filter costs by search term (client-side filtering on description/vehicle/driver)
+  const filteredCosts = costs.filter((cost) => {
+    if (!search) return true;
+    const searchLower = search.toLowerCase();
+    return (
+      cost.description?.toLowerCase().includes(searchLower) ||
+      cost.vehicle?.registrationNumber.toLowerCase().includes(searchLower) ||
+      (cost.driver && `${cost.driver.firstName} ${cost.driver.lastName}`.toLowerCase().includes(searchLower))
+    );
+  });
 
-  // Handle form submit
-  const handleFormSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setFormLoading(true);
-
-    try {
-      // TODO: Implement API call when backend is ready
-      // For now, just close the dialog
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      alert("Funkcja dodawania wpisow bedzie dostepna po podlaczeniu do bazy danych");
-      setShowAddDialog(false);
-      setFormData({
-        date: "",
-        driver: "",
-        vehicle: "",
-        route: "",
-        client: "",
-        amount: "",
-        share: "100",
-        note: "",
-      });
-    } catch (error) {
-      console.error("Error adding entry:", error);
-      alert("Wystapil blad podczas dodawania wpisu");
-    } finally {
-      setFormLoading(false);
-    }
-  };
+  // Top 5 categories by total
+  const topCategories = Object.entries(summary.categoryTotals)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5);
 
   return (
     <div className="space-y-6">
@@ -245,20 +252,20 @@ export default function CostsPage() {
         <div>
           <h1 className="text-3xl font-bold flex items-center gap-2">
             <Calculator className="h-8 w-8" />
-            Rozliczenia Kosztów
+            Koszty
           </h1>
           <p className="text-muted-foreground">
-            Alokacja przychodów na kierowców i pojazdy
+            Zarządzanie kosztami floty i operacji
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={handleExportExcel}>
+          <Button variant="outline" onClick={handleExportCSV} disabled={costs.length === 0}>
             <Download className="mr-2 h-4 w-4" />
-            Eksport Excel
+            Eksport CSV
           </Button>
           <Button onClick={() => setShowAddDialog(true)}>
             <Plus className="mr-2 h-4 w-4" />
-            Dodaj wpis
+            Dodaj koszt
           </Button>
         </div>
       </div>
@@ -268,371 +275,288 @@ export default function CostsPage() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm text-muted-foreground flex items-center gap-2">
-              <Calendar className="h-4 w-4" />
-              Okres
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">Styczeń 2026</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground flex items-center gap-2">
               <TrendingUp className="h-4 w-4" />
-              Suma przychodów
+              Suma kosztów
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">287 450 zł</p>
+            <p className="text-2xl font-bold text-red-600">
+              {formatCurrency(summary.total)}
+            </p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm text-muted-foreground flex items-center gap-2">
-              <Users className="h-4 w-4" />
-              Aktywni kierowcy
+              <FileText className="h-4 w-4" />
+              Liczba wpisów
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">18</p>
+            <p className="text-2xl font-bold">{pagination.total}</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm text-muted-foreground flex items-center gap-2">
-              <Truck className="h-4 w-4" />
-              Pojazdy w eksploatacji
+              <Fuel className="h-4 w-4" />
+              Paliwo
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">24</p>
+            <p className="text-2xl font-bold">
+              {formatCurrency(summary.categoryTotals.FUEL || 0)}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-muted-foreground flex items-center gap-2">
+              <Wrench className="h-4 w-4" />
+              Serwis
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold">
+              {formatCurrency(summary.categoryTotals.SERVICE || 0)}
+            </p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Tabs */}
-      <Tabs defaultValue="daily" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="daily">Dzienne wpisy</TabsTrigger>
-          <TabsTrigger value="drivers">Raport kierowców</TabsTrigger>
-          <TabsTrigger value="vehicles">Raport pojazdów</TabsTrigger>
-        </TabsList>
+      {/* Filters */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex flex-wrap gap-4">
+            <div className="flex-1 min-w-[200px]">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Szukaj..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+            </div>
+            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Kategoria" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Wszystkie kategorie</SelectItem>
+                {Object.entries(costCategoryLabels).map(([value, label]) => (
+                  <SelectItem key={value} value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <div className="flex gap-2 items-center">
+              <Input
+                type="date"
+                value={dateRange.startDate}
+                onChange={(e) =>
+                  setDateRange((prev) => ({ ...prev, startDate: e.target.value }))
+                }
+                className="w-[150px]"
+              />
+              <span className="text-muted-foreground">-</span>
+              <Input
+                type="date"
+                value={dateRange.endDate}
+                onChange={(e) =>
+                  setDateRange((prev) => ({ ...prev, endDate: e.target.value }))
+                }
+                className="w-[150px]"
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
-        {/* Daily Records Tab */}
-        <TabsContent value="daily">
-          <Card>
-            <CardHeader>
-              <CardTitle>Dzienne rekordy pracy</CardTitle>
-            </CardHeader>
-            <CardContent>
+      {/* Costs Table */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Lista kosztów</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : filteredCosts.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <Calculator className="h-12 w-12 mx-auto mb-4 opacity-50" />
+              <p>Brak kosztów do wyświetlenia</p>
+            </div>
+          ) : (
+            <>
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Data</TableHead>
-                    <TableHead>Kierowca</TableHead>
+                    <TableHead>Kategoria</TableHead>
+                    <TableHead>Opis</TableHead>
                     <TableHead>Pojazd</TableHead>
-                    <TableHead>Trasa</TableHead>
-                    <TableHead>Klient</TableHead>
-                    <TableHead>Udział</TableHead>
+                    <TableHead>Kierowca</TableHead>
                     <TableHead className="text-right">Kwota</TableHead>
+                    <TableHead className="w-[50px]"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {dailyRecords.map((record) => (
-                    <TableRow key={record.id}>
+                  {filteredCosts.map((cost) => (
+                    <TableRow key={cost.id}>
                       <TableCell className="font-medium">
-                        {record.date}
+                        {formatDate(cost.date)}
                       </TableCell>
-                      <TableCell>{record.driver}</TableCell>
                       <TableCell>
-                        <Badge variant="outline">{record.vehicle}</Badge>
+                        <Badge variant="outline" className="flex items-center gap-1 w-fit">
+                          {categoryIcons[cost.category]}
+                          {costCategoryLabels[cost.category] || cost.category}
+                        </Badge>
                       </TableCell>
                       <TableCell className="max-w-[200px] truncate">
-                        {record.route}
-                        {record.note && (
-                          <span className="ml-2 text-xs text-muted-foreground">
-                            ({record.note})
-                          </span>
-                        )}
+                        {cost.description || "-"}
                       </TableCell>
-                      <TableCell>{record.client}</TableCell>
                       <TableCell>
-                        {record.share < 100 ? (
-                          <Badge variant="secondary">{record.share}%</Badge>
+                        {cost.vehicle ? (
+                          <Link
+                            href={`/vehicles/${cost.vehicle.id}`}
+                            className="text-primary hover:underline"
+                          >
+                            {cost.vehicle.registrationNumber}
+                          </Link>
                         ) : (
-                          <span className="text-muted-foreground">100%</span>
+                          <span className="text-muted-foreground">-</span>
                         )}
                       </TableCell>
-                      <TableCell className="text-right font-medium">
-                        {record.amount.toLocaleString("pl-PL")} zł
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Drivers Report Tab */}
-        <TabsContent value="drivers">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Users className="h-5 w-5" />
-                Raport miesięczny kierowców
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Kierowca</TableHead>
-                    <TableHead className="text-center">Dni pracy</TableHead>
-                    <TableHead className="text-center">Zleceń</TableHead>
-                    <TableHead className="text-right">Średnia/dzień</TableHead>
-                    <TableHead className="text-right">Suma</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {driverMonthlyData.map((driver) => (
-                    <TableRow key={driver.id}>
-                      <TableCell className="font-medium">
-                        {driver.driver}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        {driver.workDays}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        {driver.orders}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {driver.avgDaily.toLocaleString("pl-PL")} zł
-                      </TableCell>
-                      <TableCell className="text-right font-bold">
-                        {driver.totalRevenue.toLocaleString("pl-PL")} zł
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Vehicles Report Tab */}
-        <TabsContent value="vehicles">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Truck className="h-5 w-5" />
-                Raport miesięczny pojazdów (rentowność)
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Pojazd</TableHead>
-                    <TableHead className="text-center">Dni</TableHead>
-                    <TableHead className="text-center">Kierowcy</TableHead>
-                    <TableHead className="text-right">Przychód</TableHead>
-                    <TableHead className="text-right">Paliwo</TableHead>
-                    <TableHead className="text-right">Inne koszty</TableHead>
-                    <TableHead className="text-right">Zysk</TableHead>
-                    <TableHead className="text-right">Marża</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {vehicleMonthlyData.map((vehicle) => (
-                    <TableRow key={vehicle.id}>
                       <TableCell>
-                        <Badge variant="outline" className="font-mono">
-                          {vehicle.vehicle}
-                        </Badge>
+                        {cost.driver ? (
+                          <Link
+                            href={`/drivers/${cost.driver.id}`}
+                            className="text-primary hover:underline"
+                          >
+                            {cost.driver.firstName} {cost.driver.lastName}
+                          </Link>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
                       </TableCell>
-                      <TableCell className="text-center">
-                        {vehicle.operatingDays}
+                      <TableCell className="text-right font-medium text-red-600">
+                        {formatCurrency(cost.amount, cost.currency)}
                       </TableCell>
-                      <TableCell className="text-center">
-                        {vehicle.driversCount}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {vehicle.revenue.toLocaleString("pl-PL")} zł
-                      </TableCell>
-                      <TableCell className="text-right text-red-600">
-                        -{vehicle.fuelCost.toLocaleString("pl-PL")} zł
-                      </TableCell>
-                      <TableCell className="text-right text-red-600">
-                        -{vehicle.otherCost.toLocaleString("pl-PL")} zł
-                      </TableCell>
-                      <TableCell className="text-right font-bold text-green-600">
-                        {vehicle.profit.toLocaleString("pl-PL")} zł
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Badge
-                          variant={vehicle.margin >= 75 ? "default" : "secondary"}
-                          className={
-                            vehicle.margin >= 75
-                              ? "bg-green-600"
-                              : vehicle.margin >= 50
-                              ? "bg-amber-500"
-                              : "bg-red-500"
-                          }
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setDeletingCostId(cost.id)}
                         >
-                          {vehicle.margin.toFixed(1)}%
-                        </Badge>
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
 
-      {/* Add Entry Dialog */}
-      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-        <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
-            <DialogTitle>Dodaj wpis rozliczenia</DialogTitle>
-            <DialogDescription>
-              Wprowadz dane nowego wpisu rozliczeniowego
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleFormSubmit} className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="date">Data</Label>
-                <Input
-                  id="date"
-                  name="date"
-                  type="date"
-                  value={formData.date}
-                  onChange={handleFormChange}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="driver">Kierowca</Label>
-                <Select
-                  value={formData.driver}
-                  onValueChange={(value) =>
-                    setFormData((prev) => ({ ...prev, driver: value }))
-                  }
+              {/* Pagination */}
+              {pagination.totalPages > 1 && (
+                <div className="flex items-center justify-between mt-4">
+                  <p className="text-sm text-muted-foreground">
+                    Strona {pagination.page} z {pagination.totalPages} ({pagination.total} wpisów)
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        setPagination((prev) => ({ ...prev, page: prev.page - 1 }))
+                      }
+                      disabled={pagination.page <= 1}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                      Poprzednia
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        setPagination((prev) => ({ ...prev, page: prev.page + 1 }))
+                      }
+                      disabled={pagination.page >= pagination.totalPages}
+                    >
+                      Następna
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Category Summary */}
+      {topCategories.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Podsumowanie wg kategorii</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 md:grid-cols-5">
+              {topCategories.map(([category, amount]) => (
+                <div
+                  key={category}
+                  className="flex items-center gap-3 p-3 rounded-lg border"
                 >
-                  <SelectTrigger id="driver">
-                    <SelectValue placeholder="Wybierz kierowce" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {driverMonthlyData.map((d) => (
-                      <SelectItem key={d.id} value={d.driver}>
-                        {d.driver}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="vehicle">Pojazd</Label>
-                <Select
-                  value={formData.vehicle}
-                  onValueChange={(value) =>
-                    setFormData((prev) => ({ ...prev, vehicle: value }))
-                  }
-                >
-                  <SelectTrigger id="vehicle">
-                    <SelectValue placeholder="Wybierz pojazd" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {vehicleMonthlyData.map((v) => (
-                      <SelectItem key={v.id} value={v.vehicle}>
-                        {v.vehicle}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="amount">Kwota (zl)</Label>
-                <Input
-                  id="amount"
-                  name="amount"
-                  type="number"
-                  step="0.01"
-                  value={formData.amount}
-                  onChange={handleFormChange}
-                  placeholder="0.00"
-                  required
-                />
-              </div>
+                  <div className="p-2 rounded-full bg-muted">
+                    {categoryIcons[category]}
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">
+                      {costCategoryLabels[category] || category}
+                    </p>
+                    <p className="font-semibold">{formatCurrency(amount)}</p>
+                  </div>
+                </div>
+              ))}
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="route">Trasa</Label>
-              <Input
-                id="route"
-                name="route"
-                value={formData.route}
-                onChange={handleFormChange}
-                placeholder="np. Warszawa - Krakow"
-              />
-            </div>
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="client">Klient</Label>
-                <Input
-                  id="client"
-                  name="client"
-                  value={formData.client}
-                  onChange={handleFormChange}
-                  placeholder="Nazwa klienta"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="share">Udzial (%)</Label>
-                <Input
-                  id="share"
-                  name="share"
-                  type="number"
-                  min="1"
-                  max="100"
-                  value={formData.share}
-                  onChange={handleFormChange}
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="note">Uwagi</Label>
-              <Input
-                id="note"
-                name="note"
-                value={formData.note}
-                onChange={handleFormChange}
-                placeholder="Opcjonalne uwagi"
-              />
-            </div>
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setShowAddDialog(false)}
-              >
-                Anuluj
-              </Button>
-              <Button type="submit" disabled={formLoading}>
-                {formLoading ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Plus className="mr-2 h-4 w-4" />
-                )}
-                Dodaj wpis
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Add Cost Dialog */}
+      <CostAddDialog
+        open={showAddDialog}
+        onOpenChange={setShowAddDialog}
+        onSuccess={fetchCosts}
+      />
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog
+        open={!!deletingCostId}
+        onOpenChange={(open) => !open && setDeletingCostId(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Czy na pewno chcesz usunąć?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Ta operacja jest nieodwracalna. Koszt zostanie trwale usunięty z
+              systemu.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Anuluj</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteCost}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Usuń
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
