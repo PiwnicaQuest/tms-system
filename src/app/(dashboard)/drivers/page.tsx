@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
   TableBody,
@@ -46,10 +47,12 @@ import {
   Mail,
   Calendar,
   AlertTriangle,
-  Truck,
   Pencil,
   Trash2,
   Loader2,
+  RotateCcw,
+  UserX,
+  UserCheck,
 } from "lucide-react";
 
 // Types matching Prisma schema
@@ -112,7 +115,7 @@ const statusConfig: Record<DriverStatus, { label: string; color: string }> = {
 };
 
 const employmentTypeLabels: Record<EmploymentType, string> = {
-  EMPLOYMENT: "Umowa o pracę",
+  EMPLOYMENT: "Umowa o prace",
   B2B: "B2B",
   CONTRACT: "Umowa zlecenie",
 };
@@ -172,12 +175,35 @@ export default function DriversPage() {
   const [formData, setFormData] = useState<DriverFormData>(emptyFormData);
   const [submitting, setSubmitting] = useState(false);
 
+  // Tab state
+  const [activeTab, setActiveTab] = useState<"active" | "inactive">("active");
+  const [tabCounts, setTabCounts] = useState({ active: 0, inactive: 0 });
+
+  // Fetch counts for tabs
+  const fetchCounts = useCallback(async () => {
+    try {
+      const [activeRes, inactiveRes] = await Promise.all([
+        fetch("/api/drivers?limit=1&isActive=true"),
+        fetch("/api/drivers?limit=1&isActive=false"),
+      ]);
+      const activeData = await activeRes.json();
+      const inactiveData = await inactiveRes.json();
+      setTabCounts({
+        active: activeData.pagination?.total || 0,
+        inactive: inactiveData.pagination?.total || 0,
+      });
+    } catch (error) {
+      console.error("Error fetching counts:", error);
+    }
+  }, []);
+
   const fetchDrivers = useCallback(async () => {
     try {
       setLoading(true);
       const params = new URLSearchParams();
       if (searchQuery) params.set("search", searchQuery);
       if (statusFilter && statusFilter !== "all") params.set("status", statusFilter);
+      params.set("isActive", activeTab === "active" ? "true" : "false");
       params.set("limit", "100");
 
       const response = await fetch(`/api/drivers?${params.toString()}`);
@@ -190,11 +216,21 @@ export default function DriversPage() {
     } finally {
       setLoading(false);
     }
-  }, [searchQuery, statusFilter]);
+  }, [searchQuery, statusFilter, activeTab]);
 
   useEffect(() => {
     fetchDrivers();
   }, [fetchDrivers]);
+
+  useEffect(() => {
+    fetchCounts();
+  }, [fetchCounts]);
+
+  // Handle tab change
+  const handleTabChange = (value: string) => {
+    setActiveTab(value as "active" | "inactive");
+    setStatusFilter("all");
+  };
 
   const handleNew = () => {
     setEditingDriver(null);
@@ -224,7 +260,7 @@ export default function DriversPage() {
   };
 
   const handleDelete = async (driver: Driver) => {
-    if (!confirm(`Czy na pewno chcesz dezaktywować kierowcę ${driver.firstName} ${driver.lastName}?`)) {
+    if (!confirm(`Czy na pewno chcesz dezaktywowac kierowce ${driver.firstName} ${driver.lastName}?`)) {
       return;
     }
 
@@ -235,13 +271,39 @@ export default function DriversPage() {
 
       if (response.ok) {
         fetchDrivers();
+        fetchCounts();
       } else {
         const error = await response.json();
-        alert(error.error || "Błąd podczas usuwania kierowcy");
+        alert(error.error || "Blad podczas dezaktywacji kierowcy");
       }
     } catch (error) {
       console.error("Error deleting driver:", error);
-      alert("Błąd podczas usuwania kierowcy");
+      alert("Blad podczas dezaktywacji kierowcy");
+    }
+  };
+
+  const handleRestore = async (driver: Driver) => {
+    if (!confirm(`Czy na pewno chcesz przywrocic kierowce ${driver.firstName} ${driver.lastName}?`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/drivers/${driver.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: true, status: "ACTIVE" }),
+      });
+
+      if (response.ok) {
+        fetchDrivers();
+        fetchCounts();
+      } else {
+        const error = await response.json();
+        alert(error.error || "Blad podczas przywracania kierowcy");
+      }
+    } catch (error) {
+      console.error("Error restoring driver:", error);
+      alert("Blad podczas przywracania kierowcy");
     }
   };
 
@@ -276,25 +338,215 @@ export default function DriversPage() {
       if (response.ok) {
         setDialogOpen(false);
         fetchDrivers();
+        fetchCounts();
       } else {
         const error = await response.json();
-        alert(error.error || "Błąd podczas zapisywania kierowcy");
+        alert(error.error || "Blad podczas zapisywania kierowcy");
       }
     } catch (error) {
       console.error("Error saving driver:", error);
-      alert("Błąd podczas zapisywania kierowcy");
+      alert("Blad podczas zapisywania kierowcy");
     } finally {
       setSubmitting(false);
     }
   };
 
-  // Stats calculation
-  const stats = {
-    total: drivers.length,
-    active: drivers.filter((d) => d.status === "ACTIVE").length,
-    onLeave: drivers.filter((d) => d.status === "ON_LEAVE").length,
-    sick: drivers.filter((d) => d.status === "SICK").length,
+  // Stats calculation based on active tab
+  const stats = activeTab === "active" 
+    ? {
+        total: drivers.length,
+        active: drivers.filter((d) => d.status === "ACTIVE").length,
+        onLeave: drivers.filter((d) => d.status === "ON_LEAVE").length,
+        sick: drivers.filter((d) => d.status === "SICK").length,
+      }
+    : {
+        total: drivers.length,
+        inactive: drivers.filter((d) => d.status === "INACTIVE").length,
+        terminated: drivers.filter((d) => d.status === "TERMINATED").length,
+      };
+
+  // Get available status options based on tab
+  const getStatusOptions = () => {
+    if (activeTab === "active") {
+      return [
+        { value: "ACTIVE", label: "Aktywni" },
+        { value: "ON_LEAVE", label: "Na urlopie" },
+        { value: "SICK", label: "L4" },
+      ];
+    }
+    return [
+      { value: "INACTIVE", label: "Nieaktywni" },
+      { value: "TERMINATED", label: "Zwolnieni" },
+    ];
   };
+
+  // Render driver table
+  const renderDriverTable = () => (
+    <>
+      {loading ? (
+        <div className="flex justify-center py-8">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      ) : drivers.length === 0 ? (
+        <div className="text-center py-8 text-muted-foreground">
+          {activeTab === "active"
+            ? "Nie znaleziono aktywnych kierowcow"
+            : "Brak nieaktywnych kierowcow"}
+        </div>
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Kierowca</TableHead>
+              <TableHead>Kontakt</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Forma zatrudnienia</TableHead>
+              <TableHead>Prawo jazdy</TableHead>
+              <TableHead>Terminy</TableHead>
+              <TableHead className="text-right">Akcje</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {drivers.map((driver) => (
+              <TableRow key={driver.id}>
+                <TableCell>
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+                      <span className="text-sm font-medium text-primary">
+                        {driver.firstName[0]}
+                        {driver.lastName[0]}
+                      </span>
+                    </div>
+                    <div>
+                      <Link
+                        href={`/drivers/${driver.id}`}
+                        className="font-medium hover:underline"
+                      >
+                        {driver.firstName} {driver.lastName}
+                      </Link>
+                      {driver.city && (
+                        <p className="text-sm text-muted-foreground">
+                          {driver.city}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <div className="space-y-1">
+                    {driver.phone && (
+                      <div className="flex items-center gap-1 text-sm">
+                        <Phone className="h-3 w-3 text-muted-foreground" />
+                        {driver.phone}
+                      </div>
+                    )}
+                    {driver.email && (
+                      <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                        <Mail className="h-3 w-3" />
+                        {driver.email}
+                      </div>
+                    )}
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <Badge
+                    variant="secondary"
+                    className={`${statusConfig[driver.status].color} text-white`}
+                  >
+                    {statusConfig[driver.status].label}
+                  </Badge>
+                </TableCell>
+                <TableCell>
+                  {employmentTypeLabels[driver.employmentType]}
+                </TableCell>
+                <TableCell>
+                  <div>
+                    {driver.licenseNumber && (
+                      <p className="font-mono text-sm">{driver.licenseNumber}</p>
+                    )}
+                    {driver.licenseCategories && (
+                      <div className="flex gap-1 mt-1">
+                        {driver.licenseCategories.split(",").map((cat) => (
+                          <Badge key={cat} variant="outline" className="text-xs">
+                            {cat.trim()}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <div className="flex flex-col gap-1">
+                    {isDateExpired(driver.licenseExpiry) && (
+                      <div className="flex items-center gap-1 text-xs text-red-600">
+                        <AlertTriangle className="h-3 w-3" />
+                        Prawo jazdy!
+                      </div>
+                    )}
+                    {isDateExpiringSoon(driver.licenseExpiry) && !isDateExpired(driver.licenseExpiry) && (
+                      <div className="flex items-center gap-1 text-xs text-amber-600">
+                        <Calendar className="h-3 w-3" />
+                        PJ: {getDaysUntil(driver.licenseExpiry)} dni
+                      </div>
+                    )}
+                    {isDateExpiringSoon(driver.medicalExpiry) && (
+                      <div className="flex items-center gap-1 text-xs text-amber-600">
+                        <Calendar className="h-3 w-3" />
+                        Badania: {getDaysUntil(driver.medicalExpiry)} dni
+                      </div>
+                    )}
+                    {!isDateExpired(driver.licenseExpiry) &&
+                      !isDateExpiringSoon(driver.licenseExpiry) &&
+                      !isDateExpiringSoon(driver.medicalExpiry) && (
+                        <span className="text-xs text-muted-foreground">OK</span>
+                      )}
+                  </div>
+                </TableCell>
+                <TableCell className="text-right">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon">
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem asChild>
+                        <Link href={`/drivers/${driver.id}`}>
+                          <Eye className="mr-2 h-4 w-4" />
+                          Szczegoly
+                        </Link>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleEdit(driver)}>
+                        <Pencil className="mr-2 h-4 w-4" />
+                        Edytuj
+                      </DropdownMenuItem>
+                      {activeTab === "active" ? (
+                        <DropdownMenuItem
+                          onClick={() => handleDelete(driver)}
+                          className="text-red-600"
+                        >
+                          <UserX className="mr-2 h-4 w-4" />
+                          Dezaktywuj
+                        </DropdownMenuItem>
+                      ) : (
+                        <DropdownMenuItem
+                          onClick={() => handleRestore(driver)}
+                          className="text-emerald-600"
+                        >
+                          <RotateCcw className="mr-2 h-4 w-4" />
+                          Przywroc
+                        </DropdownMenuItem>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+    </>
+  );
 
   return (
     <div className="space-y-6">
@@ -306,265 +558,214 @@ export default function DriversPage() {
             Kierowcy
           </h1>
           <p className="text-muted-foreground">
-            Zarządzanie kierowcami firmy
+            Zarzadzanie kierowcami firmy
           </p>
         </div>
         <Button onClick={handleNew}>
           <Plus className="mr-2 h-4 w-4" />
-          Dodaj kierowcę
+          Dodaj kierowce
         </Button>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground">
-              Wszyscy kierowcy
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{stats.total}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground flex items-center gap-2">
-              <div className="h-2 w-2 rounded-full bg-emerald-500" />
-              Aktywni
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{stats.active}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground flex items-center gap-2">
-              <div className="h-2 w-2 rounded-full bg-blue-500" />
-              Na urlopie
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{stats.onLeave}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground flex items-center gap-2">
-              <div className="h-2 w-2 rounded-full bg-amber-500" />
-              Zwolnienie lekarskie
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{stats.sick}</p>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={handleTabChange}>
+        <TabsList>
+          <TabsTrigger value="active" className="gap-2">
+            <UserCheck className="h-4 w-4" />
+            Aktywni ({tabCounts.active})
+          </TabsTrigger>
+          <TabsTrigger value="inactive" className="gap-2">
+            <UserX className="h-4 w-4" />
+            Nieaktywni ({tabCounts.inactive})
+          </TabsTrigger>
+        </TabsList>
 
-      {/* Filters */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex flex-wrap gap-4">
-            <div className="flex-1 min-w-[200px]">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder="Szukaj po imieniu, nazwisku, nr prawa jazdy..."
-                  className="pl-9"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-              </div>
-            </div>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[180px]">
-                <Filter className="mr-2 h-4 w-4" />
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Wszystkie</SelectItem>
-                <SelectItem value="ACTIVE">Aktywni</SelectItem>
-                <SelectItem value="ON_LEAVE">Na urlopie</SelectItem>
-                <SelectItem value="SICK">L4</SelectItem>
-                <SelectItem value="INACTIVE">Nieaktywni</SelectItem>
-              </SelectContent>
-            </Select>
+        <TabsContent value="active" className="space-y-4">
+          {/* Stats Cards for Active */}
+          <div className="grid gap-4 md:grid-cols-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm text-muted-foreground">
+                  Wszyscy aktywni
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-bold">{stats.total}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm text-muted-foreground flex items-center gap-2">
+                  <div className="h-2 w-2 rounded-full bg-emerald-500" />
+                  Pracujacy
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-bold">{"active" in stats ? stats.active : 0}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm text-muted-foreground flex items-center gap-2">
+                  <div className="h-2 w-2 rounded-full bg-blue-500" />
+                  Na urlopie
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-bold">{"onLeave" in stats ? stats.onLeave : 0}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm text-muted-foreground flex items-center gap-2">
+                  <div className="h-2 w-2 rounded-full bg-amber-500" />
+                  Zwolnienie lekarskie
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-bold">{"sick" in stats ? stats.sick : 0}</p>
+              </CardContent>
+            </Card>
           </div>
-        </CardContent>
-      </Card>
 
-      {/* Drivers Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Lista kierowców</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="flex justify-center py-8">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
-          ) : drivers.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              Brak kierowców do wyświetlenia
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Kierowca</TableHead>
-                  <TableHead>Kontakt</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Forma zatrudnienia</TableHead>
-                  <TableHead>Prawo jazdy</TableHead>
-                  <TableHead>Terminy</TableHead>
-                  <TableHead className="text-right">Akcje</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {drivers.map((driver) => (
-                  <TableRow key={driver.id}>
-                    <TableCell>
-                      <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-                          <span className="text-sm font-medium text-primary">
-                            {driver.firstName[0]}
-                            {driver.lastName[0]}
-                          </span>
-                        </div>
-                        <div>
-                          <Link
-                            href={`/drivers/${driver.id}`}
-                            className="font-medium hover:underline"
-                          >
-                            {driver.firstName} {driver.lastName}
-                          </Link>
-                          {driver.city && (
-                            <p className="text-sm text-muted-foreground">
-                              {driver.city}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="space-y-1">
-                        {driver.phone && (
-                          <div className="flex items-center gap-1 text-sm">
-                            <Phone className="h-3 w-3 text-muted-foreground" />
-                            {driver.phone}
-                          </div>
-                        )}
-                        {driver.email && (
-                          <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                            <Mail className="h-3 w-3" />
-                            {driver.email}
-                          </div>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant="secondary"
-                        className={`${statusConfig[driver.status].color} text-white`}
-                      >
-                        {statusConfig[driver.status].label}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {employmentTypeLabels[driver.employmentType]}
-                    </TableCell>
-                    <TableCell>
-                      <div>
-                        {driver.licenseNumber && (
-                          <p className="font-mono text-sm">{driver.licenseNumber}</p>
-                        )}
-                        {driver.licenseCategories && (
-                          <div className="flex gap-1 mt-1">
-                            {driver.licenseCategories.split(",").map((cat) => (
-                              <Badge key={cat} variant="outline" className="text-xs">
-                                {cat.trim()}
-                              </Badge>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex flex-col gap-1">
-                        {isDateExpired(driver.licenseExpiry) && (
-                          <div className="flex items-center gap-1 text-xs text-red-600">
-                            <AlertTriangle className="h-3 w-3" />
-                            Prawo jazdy!
-                          </div>
-                        )}
-                        {isDateExpiringSoon(driver.licenseExpiry) && !isDateExpired(driver.licenseExpiry) && (
-                          <div className="flex items-center gap-1 text-xs text-amber-600">
-                            <Calendar className="h-3 w-3" />
-                            PJ: {getDaysUntil(driver.licenseExpiry)} dni
-                          </div>
-                        )}
-                        {isDateExpiringSoon(driver.medicalExpiry) && (
-                          <div className="flex items-center gap-1 text-xs text-amber-600">
-                            <Calendar className="h-3 w-3" />
-                            Badania: {getDaysUntil(driver.medicalExpiry)} dni
-                          </div>
-                        )}
-                        {!isDateExpired(driver.licenseExpiry) &&
-                          !isDateExpiringSoon(driver.licenseExpiry) &&
-                          !isDateExpiringSoon(driver.medicalExpiry) && (
-                            <span className="text-xs text-muted-foreground">OK</span>
-                          )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem asChild>
-                            <Link href={`/drivers/${driver.id}`}>
-                              <Eye className="mr-2 h-4 w-4" />
-                              Szczegóły
-                            </Link>
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleEdit(driver)}>
-                            <Pencil className="mr-2 h-4 w-4" />
-                            Edytuj
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => handleDelete(driver)}
-                            className="text-red-600"
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Dezaktywuj
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+          {/* Filters */}
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex flex-wrap gap-4">
+                <div className="flex-1 min-w-[200px]">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      placeholder="Szukaj po imieniu, nazwisku, nr prawa jazdy..."
+                      className="pl-9"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-[180px]">
+                    <Filter className="mr-2 h-4 w-4" />
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Wszystkie</SelectItem>
+                    {getStatusOptions().map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Drivers Table */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Lista aktywnych kierowcow</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {renderDriverTable()}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="inactive" className="space-y-4">
+          {/* Stats Cards for Inactive */}
+          <div className="grid gap-4 md:grid-cols-3">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm text-muted-foreground">
+                  Wszyscy nieaktywni
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-bold">{stats.total}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm text-muted-foreground flex items-center gap-2">
+                  <div className="h-2 w-2 rounded-full bg-slate-500" />
+                  Nieaktywni
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-bold">{"inactive" in stats ? stats.inactive : 0}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm text-muted-foreground flex items-center gap-2">
+                  <div className="h-2 w-2 rounded-full bg-red-500" />
+                  Zwolnieni
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-bold">{"terminated" in stats ? stats.terminated : 0}</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Filters */}
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex flex-wrap gap-4">
+                <div className="flex-1 min-w-[200px]">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      placeholder="Szukaj po imieniu, nazwisku..."
+                      className="pl-9"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-[180px]">
+                    <Filter className="mr-2 h-4 w-4" />
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Wszystkie</SelectItem>
+                    {getStatusOptions().map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Drivers Table */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Lista nieaktywnych kierowcow</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {renderDriverTable()}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
       {/* Edit/Add Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {editingDriver ? "Edytuj kierowcę" : "Dodaj kierowcę"}
+              {editingDriver ? "Edytuj kierowce" : "Dodaj kierowce"}
             </DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="firstName">Imię *</Label>
+                <Label htmlFor="firstName">Imie *</Label>
                 <Input
                   id="firstName"
                   value={formData.firstName}
@@ -663,7 +864,7 @@ export default function DriversPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="EMPLOYMENT">Umowa o pracę</SelectItem>
+                    <SelectItem value="EMPLOYMENT">Umowa o prace</SelectItem>
                     <SelectItem value="B2B">B2B</SelectItem>
                     <SelectItem value="CONTRACT">Umowa zlecenie</SelectItem>
                   </SelectContent>
@@ -716,7 +917,7 @@ export default function DriversPage() {
               </div>
               <div className="grid grid-cols-2 gap-4 mt-4">
                 <div className="space-y-2">
-                  <Label htmlFor="licenseExpiry">Ważność prawa jazdy</Label>
+                  <Label htmlFor="licenseExpiry">Waznosc prawa jazdy</Label>
                   <Input
                     id="licenseExpiry"
                     type="date"
@@ -727,7 +928,7 @@ export default function DriversPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="medicalExpiry">Ważność badań lekarskich</Label>
+                  <Label htmlFor="medicalExpiry">Waznosc badan lekarskich</Label>
                   <Input
                     id="medicalExpiry"
                     type="date"
@@ -746,7 +947,7 @@ export default function DriversPage() {
             </Button>
             <Button onClick={handleSubmit} disabled={submitting}>
               {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {editingDriver ? "Zapisz zmiany" : "Dodaj kierowcę"}
+              {editingDriver ? "Zapisz zmiany" : "Dodaj kierowce"}
             </Button>
           </DialogFooter>
         </DialogContent>
