@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -20,7 +21,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Loader2, Building2, Search } from "lucide-react";
+import { Separator } from "@/components/ui/separator";
+import { Plus, Loader2, Building2, Search, MapPin, Mail } from "lucide-react";
 import { toast } from "sonner";
 
 // Contractor types
@@ -39,9 +41,16 @@ interface FormData {
   shortName: string;
   nip: string;
   regon: string;
+  // Adres siedziby
   address: string;
   city: string;
   postalCode: string;
+  // Adres korespondencyjny
+  hasDifferentCorrAddress: boolean;
+  corrAddress: string;
+  corrCity: string;
+  corrPostalCode: string;
+  // Kontakt
   phone: string;
   email: string;
 }
@@ -58,16 +67,20 @@ export interface Contractor {
   email: string | null;
 }
 
+// Full contractor interface for callbacks
+export interface ContractorFull extends Contractor {
+  address: string | null;
+  postalCode: string | null;
+  corrAddress: string | null;
+  corrCity: string | null;
+  corrPostalCode: string | null;
+}
+
 interface ContractorQuickAddDialogProps {
-  /** Default contractor type - useful when adding from specific context */
   defaultType?: ContractorType;
-  /** Callback when contractor is successfully created */
-  onSuccess?: (contractor: Contractor) => void;
-  /** Optional trigger element - if not provided, a default button is used */
+  onSuccess?: (contractor: ContractorFull) => void;
   trigger?: React.ReactNode;
-  /** Whether the dialog is controlled externally */
   open?: boolean;
-  /** Callback for controlled dialog state */
   onOpenChange?: (open: boolean) => void;
 }
 
@@ -80,6 +93,10 @@ const initialFormData: FormData = {
   address: "",
   city: "",
   postalCode: "",
+  hasDifferentCorrAddress: false,
+  corrAddress: "",
+  corrCity: "",
+  corrPostalCode: "",
   phone: "",
   email: "",
 };
@@ -91,15 +108,12 @@ export function ContractorQuickAddDialog({
   open: controlledOpen,
   onOpenChange: controlledOnOpenChange,
 }: ContractorQuickAddDialogProps) {
-  // Internal state for uncontrolled mode
   const [internalOpen, setInternalOpen] = useState(false);
 
-  // Use controlled or uncontrolled state
   const isControlled = controlledOpen !== undefined;
   const open = isControlled ? controlledOpen : internalOpen;
   const setOpen = isControlled ? controlledOnOpenChange! : setInternalOpen;
 
-  // Form state
   const [formData, setFormData] = useState<FormData>({
     ...initialFormData,
     type: defaultType,
@@ -108,7 +122,6 @@ export function ContractorQuickAddDialog({
   const [gusLoading, setGusLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Reset form when dialog opens
   const handleOpenChange = (newOpen: boolean) => {
     if (newOpen) {
       setFormData({ ...initialFormData, type: defaultType });
@@ -117,7 +130,6 @@ export function ContractorQuickAddDialog({
     setOpen(newOpen);
   };
 
-  // Handle input change
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
@@ -126,7 +138,6 @@ export function ContractorQuickAddDialog({
     }
   };
 
-  // Handle select change
   const handleSelectChange = (name: string, value: string) => {
     setFormData((prev) => ({ ...prev, [name]: value }));
     if (errors[name]) {
@@ -134,7 +145,15 @@ export function ContractorQuickAddDialog({
     }
   };
 
-  // Search company in GUS by NIP
+  const handleCheckboxChange = (checked: boolean) => {
+    setFormData((prev) => ({
+      ...prev,
+      hasDifferentCorrAddress: checked,
+      // Clear correspondence address fields when unchecked
+      ...(checked ? {} : { corrAddress: "", corrCity: "", corrPostalCode: "" }),
+    }));
+  };
+
   const handleGusSearch = async () => {
     if (!formData.nip) {
       toast.error("Wprowadz NIP aby wyszukac firme w GUS");
@@ -177,7 +196,6 @@ export function ContractorQuickAddDialog({
     }
   };
 
-  // Validate form
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {};
 
@@ -197,7 +215,6 @@ export function ContractorQuickAddDialog({
     return Object.keys(newErrors).length === 0;
   };
 
-  // Handle form submit
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -206,17 +223,29 @@ export function ContractorQuickAddDialog({
     setLoading(true);
 
     try {
-      // Build payload - only include non-empty values
       const payload: Record<string, unknown> = {
         type: formData.type,
         name: formData.name,
       };
+      
+      // Basic info
       if (formData.shortName) payload.shortName = formData.shortName;
       if (formData.nip) payload.nip = formData.nip;
       if (formData.regon) payload.regon = formData.regon;
+      
+      // Registered address
       if (formData.address) payload.address = formData.address;
       if (formData.city) payload.city = formData.city;
       if (formData.postalCode) payload.postalCode = formData.postalCode;
+      
+      // Correspondence address (only if different)
+      if (formData.hasDifferentCorrAddress) {
+        if (formData.corrAddress) payload.corrAddress = formData.corrAddress;
+        if (formData.corrCity) payload.corrCity = formData.corrCity;
+        if (formData.corrPostalCode) payload.corrPostalCode = formData.corrPostalCode;
+      }
+      
+      // Contact
       if (formData.phone) payload.phone = formData.phone;
       if (formData.email) payload.email = formData.email;
 
@@ -241,13 +270,9 @@ export function ContractorQuickAddDialog({
 
       toast.success(`Kontrahent "${contractor.name}" zostal utworzony`);
 
-      // Close dialog
       setOpen(false);
-
-      // Reset form
       setFormData({ ...initialFormData, type: defaultType });
 
-      // Callback
       if (onSuccess) {
         onSuccess(contractor);
       }
@@ -259,7 +284,6 @@ export function ContractorQuickAddDialog({
     }
   };
 
-  // Default trigger button
   const defaultTrigger = (
     <Button
       type="button"
@@ -275,7 +299,7 @@ export function ContractorQuickAddDialog({
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>{trigger || defaultTrigger}</DialogTrigger>
-      <DialogContent className="sm:max-w-[550px]">
+      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Building2 className="h-5 w-5" />
@@ -383,70 +407,139 @@ export function ContractorQuickAddDialog({
             </div>
           </div>
 
-          {/* Address */}
-          <div className="space-y-2">
-            <Label htmlFor="quick-address">Adres</Label>
-            <Input
-              id="quick-address"
-              name="address"
-              value={formData.address}
-              onChange={handleChange}
-              placeholder="ul. Przykladowa 1"
+          {/* Registered Address Section */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+              <MapPin className="h-4 w-4" />
+              Adres siedziby
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="quick-address">Ulica i numer</Label>
+              <Input
+                id="quick-address"
+                name="address"
+                value={formData.address}
+                onChange={handleChange}
+                placeholder="ul. Przykladowa 1"
+              />
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="quick-postalCode">Kod pocztowy</Label>
+                <Input
+                  id="quick-postalCode"
+                  name="postalCode"
+                  value={formData.postalCode}
+                  onChange={handleChange}
+                  placeholder="00-000"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="quick-city">Miasto</Label>
+                <Input
+                  id="quick-city"
+                  name="city"
+                  value={formData.city}
+                  onChange={handleChange}
+                  placeholder="Miasto"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Correspondence Address Toggle */}
+          <div className="flex items-center space-x-2">
+            <Checkbox
+              id="different-corr-address"
+              checked={formData.hasDifferentCorrAddress}
+              onCheckedChange={handleCheckboxChange}
             />
+            <Label
+              htmlFor="different-corr-address"
+              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+            >
+              Inny adres korespondencyjny
+            </Label>
           </div>
 
-          {/* City and Postal Code */}
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="quick-postalCode">Kod pocztowy</Label>
-              <Input
-                id="quick-postalCode"
-                name="postalCode"
-                value={formData.postalCode}
-                onChange={handleChange}
-                placeholder="00-000"
-              />
-            </div>
+          {/* Correspondence Address Section (conditional) */}
+          {formData.hasDifferentCorrAddress && (
+            <div className="space-y-3 p-3 bg-muted/50 rounded-md border">
+              <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                <Mail className="h-4 w-4" />
+                Adres korespondencyjny
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="quick-corrAddress">Ulica i numer</Label>
+                <Input
+                  id="quick-corrAddress"
+                  name="corrAddress"
+                  value={formData.corrAddress}
+                  onChange={handleChange}
+                  placeholder="ul. Korespondencyjna 2"
+                />
+              </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="quick-city">Miasto</Label>
-              <Input
-                id="quick-city"
-                name="city"
-                value={formData.city}
-                onChange={handleChange}
-                placeholder="Miasto"
-              />
-            </div>
-          </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="quick-corrPostalCode">Kod pocztowy</Label>
+                  <Input
+                    id="quick-corrPostalCode"
+                    name="corrPostalCode"
+                    value={formData.corrPostalCode}
+                    onChange={handleChange}
+                    placeholder="00-000"
+                  />
+                </div>
 
-          {/* Contact */}
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="quick-phone">Telefon</Label>
-              <Input
-                id="quick-phone"
-                name="phone"
-                value={formData.phone}
-                onChange={handleChange}
-                placeholder="+48 123 456 789"
-              />
+                <div className="space-y-2">
+                  <Label htmlFor="quick-corrCity">Miasto</Label>
+                  <Input
+                    id="quick-corrCity"
+                    name="corrCity"
+                    value={formData.corrCity}
+                    onChange={handleChange}
+                    placeholder="Miasto"
+                  />
+                </div>
+              </div>
             </div>
+          )}
 
-            <div className="space-y-2">
-              <Label htmlFor="quick-email">Email</Label>
-              <Input
-                id="quick-email"
-                name="email"
-                type="email"
-                value={formData.email}
-                onChange={handleChange}
-                placeholder="firma@example.com"
-                className={errors.email ? "border-destructive" : ""}
-              />
-              {errors.email && (
-                <p className="text-sm text-destructive">{errors.email}</p>
-              )}
+          {/* Contact Section */}
+          <div className="space-y-3">
+            <Separator />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="quick-phone">Telefon</Label>
+                <Input
+                  id="quick-phone"
+                  name="phone"
+                  value={formData.phone}
+                  onChange={handleChange}
+                  placeholder="+48 123 456 789"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="quick-email">Email</Label>
+                <Input
+                  id="quick-email"
+                  name="email"
+                  type="email"
+                  value={formData.email}
+                  onChange={handleChange}
+                  placeholder="firma@example.com"
+                  className={errors.email ? "border-destructive" : ""}
+                />
+                {errors.email && (
+                  <p className="text-sm text-destructive">{errors.email}</p>
+                )}
+              </div>
             </div>
           </div>
 
