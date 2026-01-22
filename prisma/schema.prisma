@@ -760,6 +760,12 @@ model Invoice {
   grossAmount     Float
   currency        String @default("PLN")
 
+  // Exchange rate (for non-PLN invoices)
+  exchangeRate      Float?
+  exchangeRateDate  DateTime?
+  exchangeRateTable String?
+  amountInPLN       Float?
+
   // Payment
   paymentMethod   PaymentMethod @default(TRANSFER)
   bankAccount     String?

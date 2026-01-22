@@ -54,6 +54,7 @@ import {
   CreditCard,
 } from "lucide-react";
 import { AutocompleteInput, AutocompleteOption, fetchContractors } from "@/components/ui/autocomplete-input";
+import { NbpExchangeRate } from "@/components/ui/nbp-exchange-rate";
 
 // VAT rates
 const VAT_RATES = [
@@ -100,6 +101,11 @@ const invoiceFormSchema = z.object({
   paymentMethod: z.enum(["TRANSFER", "CASH", "CARD"]),
   bankAccount: z.string().optional(),
   currency: z.string(),
+  // Exchange rate fields (for non-PLN invoices)
+  exchangeRate: z.number().optional(),
+  exchangeRateDate: z.string().optional(),
+  exchangeRateTable: z.string().optional(),
+  amountInPLN: z.number().optional(),
   notes: z.string().optional(),
   items: z.array(invoiceItemSchema).min(1, "Faktura musi zawierac co najmniej jedna pozycje"),
 });
@@ -128,6 +134,12 @@ const defaultItem = {
 export default function NewInvoicePage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [exchangeRateData, setExchangeRateData] = useState<{
+    rate: number;
+    date: string;
+    table: string;
+    amountInPLN: number;
+  } | null>(null);
   const [contractorSearch, setContractorSearch] = useState("");
   const [selectedContractor, setSelectedContractor] = useState<AutocompleteOption | null>(null);
   const [contractorDetails, setContractorDetails] = useState<Contractor | null>(null);
@@ -750,6 +762,30 @@ export default function NewInvoicePage() {
                 </CardContent>
               </Card>
 
+              {/* NBP Exchange Rate - shown only for non-PLN currencies */}
+              {form.watch("currency") && form.watch("currency") !== "PLN" && (
+                <NbpExchangeRate
+                  currency={form.watch("currency")}
+                  amount={totals.totalGross}
+                  saleDate={form.watch("saleDate")}
+                  issueDate={form.watch("issueDate")}
+                  onRateChange={(data) => {
+                    setExchangeRateData(data);
+                    if (data) {
+                      form.setValue("exchangeRate", data.rate);
+                      form.setValue("exchangeRateDate", data.date);
+                      form.setValue("exchangeRateTable", data.table);
+                      form.setValue("amountInPLN", data.amountInPLN);
+                    } else {
+                      form.setValue("exchangeRate", undefined);
+                      form.setValue("exchangeRateDate", undefined);
+                      form.setValue("exchangeRateTable", undefined);
+                      form.setValue("amountInPLN", undefined);
+                    }
+                  }}
+                />
+              )}
+
               {/* Summary */}
               <Card className="bg-primary/5">
                 <CardHeader>
@@ -758,17 +794,32 @@ export default function NewInvoicePage() {
                 <CardContent className="space-y-2">
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Netto:</span>
-                    <span className="font-medium">{formatAmount(totals.totalNet)} PLN</span>
+                    <span className="font-medium">
+                      {formatAmount(totals.totalNet)} {form.watch("currency") || "PLN"}
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">VAT:</span>
-                    <span className="font-medium">{formatAmount(totals.totalVat)} PLN</span>
+                    <span className="font-medium">
+                      {formatAmount(totals.totalVat)} {form.watch("currency") || "PLN"}
+                    </span>
                   </div>
                   <Separator />
                   <div className="flex justify-between text-lg">
                     <span className="font-semibold">Brutto:</span>
-                    <span className="font-bold">{formatAmount(totals.totalGross)} PLN</span>
+                    <span className="font-bold">
+                      {formatAmount(totals.totalGross)} {form.watch("currency") || "PLN"}
+                    </span>
                   </div>
+                  {exchangeRateData && form.watch("currency") !== "PLN" && (
+                    <>
+                      <Separator />
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Rownowartość w PLN:</span>
+                        <span className="font-medium">{formatAmount(exchangeRateData.amountInPLN)} PLN</span>
+                      </div>
+                    </>
+                  )}
                 </CardContent>
               </Card>
 

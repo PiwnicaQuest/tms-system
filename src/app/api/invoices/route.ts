@@ -103,7 +103,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { items, orderIds, ...invoiceData } = parsed.data;
+    const { items, orderIds, exchangeRate, exchangeRateDate, exchangeRateTable, amountInPLN, ...invoiceData } = parsed.data;
 
     // Calculate amounts
     const calculatedItems = items.map((item) => {
@@ -128,6 +128,11 @@ export async function POST(request: NextRequest) {
         netAmount,
         vatAmount,
         grossAmount,
+        // Exchange rate data (for non-PLN invoices)
+        exchangeRate: exchangeRate || null,
+        exchangeRateDate: exchangeRateDate || null,
+        exchangeRateTable: exchangeRateTable || null,
+        amountInPLN: amountInPLN || null,
         items: {
           create: calculatedItems,
         },
@@ -165,6 +170,10 @@ export async function POST(request: NextRequest) {
         vatAmount: invoice.vatAmount,
         grossAmount: invoice.grossAmount,
         currency: invoice.currency,
+        exchangeRate: invoice.exchangeRate,
+        exchangeRateDate: invoice.exchangeRateDate,
+        exchangeRateTable: invoice.exchangeRateTable,
+        amountInPLN: invoice.amountInPLN,
         contractor: invoice.contractor,
         orders: invoice.orders,
       },

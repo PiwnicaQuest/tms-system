@@ -17,6 +17,11 @@ export const invoiceSchema = z.object({
   paymentMethod: z.enum(["TRANSFER", "CASH", "CARD"]).default("TRANSFER"),
   bankAccount: z.string().optional(),
   currency: z.string().default("PLN"),
+  // Exchange rate fields (for non-PLN invoices)
+  exchangeRate: z.number().positive().optional(),
+  exchangeRateDate: z.coerce.date().optional(),
+  exchangeRateTable: z.string().optional(),
+  amountInPLN: z.number().positive().optional(),
   notes: z.string().optional(),
   items: z.array(invoiceItemSchema).min(1, "Faktura musi zawierać co najmniej jedną pozycję"),
   orderIds: z.array(z.string()).optional(), // For collective invoices
