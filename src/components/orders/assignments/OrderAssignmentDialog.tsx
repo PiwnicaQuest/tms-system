@@ -25,6 +25,13 @@ import { Switch } from "@/components/ui/switch";
 import { Plus, Loader2, UserPlus, Edit } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
+import {
+  AutocompleteInput,
+  AutocompleteOption,
+  fetchDrivers,
+  fetchVehicles,
+  fetchTrailers,
+} from "@/components/ui/autocomplete-input";
 
 // Types
 type AssignmentReason =
@@ -147,21 +154,24 @@ export function OrderAssignmentDialog({
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Resources
-  const [drivers, setDrivers] = useState<Driver[]>([]);
-  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
-  const [trailers, setTrailers] = useState<Trailer[]>([]);
-  const [resourcesLoading, setResourcesLoading] = useState(false);
+  // Selected options for autocomplete inputs
+  const [selectedDriver, setSelectedDriver] = useState<AutocompleteOption | null>(null);
+  const [selectedVehicle, setSelectedVehicle] = useState<AutocompleteOption | null>(null);
+  const [selectedTrailer, setSelectedTrailer] = useState<AutocompleteOption | null>(null);
+
+  // Input values for autocomplete inputs
+  const [driverInputValue, setDriverInputValue] = useState("");
+  const [vehicleInputValue, setVehicleInputValue] = useState("");
+  const [trailerInputValue, setTrailerInputValue] = useState("");
 
   // Calculated amount
   const calculatedAmount = orderPrice
     ? Math.round(orderPrice * formData.revenueShare * 100) / 100
     : null;
 
-  // Load resources when dialog opens
+  // Initialize form when dialog opens
   useEffect(() => {
     if (open) {
-      loadResources();
       if (assignment) {
         // Populate form with existing assignment data
         setFormData({
@@ -179,6 +189,44 @@ export function OrderAssignmentDialog({
           reasonNote: assignment.reasonNote || "",
           isPrimary: assignment.isPrimary,
         });
+
+        // Set selected options from existing assignment
+        if (assignment.driver) {
+          const driverLabel = `${assignment.driver.firstName} ${assignment.driver.lastName}`;
+          setSelectedDriver({
+            value: assignment.driverId,
+            label: driverLabel,
+            description: assignment.driver.phone || undefined,
+          });
+          setDriverInputValue(driverLabel);
+        }
+
+        if (assignment.vehicle) {
+          const vehicleLabel = assignment.vehicle.registrationNumber;
+          const vehicleDesc = `${assignment.vehicle.brand || ""} ${assignment.vehicle.model || ""}`.trim() || undefined;
+          setSelectedVehicle({
+            value: assignment.vehicleId!,
+            label: vehicleLabel,
+            description: vehicleDesc,
+          });
+          setVehicleInputValue(vehicleLabel);
+        } else {
+          setSelectedVehicle(null);
+          setVehicleInputValue("");
+        }
+
+        if (assignment.trailer) {
+          const trailerLabel = assignment.trailer.registrationNumber;
+          setSelectedTrailer({
+            value: assignment.trailerId!,
+            label: trailerLabel,
+            description: assignment.trailer.type || undefined,
+          });
+          setTrailerInputValue(trailerLabel);
+        } else {
+          setSelectedTrailer(null);
+          setTrailerInputValue("");
+        }
       } else {
         // Reset form for new assignment
         setFormData({
@@ -186,39 +234,16 @@ export function OrderAssignmentDialog({
           startDate: format(new Date(orderLoadingDate), "yyyy-MM-dd"),
           revenueShare: Math.min(remainingShare, 1.0),
         });
+        setSelectedDriver(null);
+        setSelectedVehicle(null);
+        setSelectedTrailer(null);
+        setDriverInputValue("");
+        setVehicleInputValue("");
+        setTrailerInputValue("");
       }
       setErrors({});
     }
   }, [open, assignment, orderLoadingDate, remainingShare]);
-
-  const loadResources = async () => {
-    setResourcesLoading(true);
-    try {
-      const [driversRes, vehiclesRes, trailersRes] = await Promise.all([
-        fetch("/api/drivers?limit=200&status=ACTIVE"),
-        fetch("/api/vehicles?limit=200&status=ACTIVE"),
-        fetch("/api/trailers?limit=200"),
-      ]);
-
-      if (driversRes.ok) {
-        const data = await driversRes.json();
-        setDrivers(data.data || []);
-      }
-      if (vehiclesRes.ok) {
-        const data = await vehiclesRes.json();
-        setVehicles(data.data || []);
-      }
-      if (trailersRes.ok) {
-        const data = await trailersRes.json();
-        setTrailers(data.data || []);
-      }
-    } catch (error) {
-      console.error("Error loading resources:", error);
-      toast.error("Blad ladowania zasobow");
-    } finally {
-      setResourcesLoading(false);
-    }
-  };
 
   const handleSelectChange = (name: string, value: string) => {
     setFormData((prev) => ({ ...prev, [name]: value }));
@@ -243,6 +268,25 @@ export function OrderAssignmentDialog({
 
   const handleSwitchChange = (checked: boolean) => {
     setFormData((prev) => ({ ...prev, isPrimary: checked }));
+  };
+
+  // Autocomplete handlers
+  const handleDriverSelect = (option: AutocompleteOption | null) => {
+    setSelectedDriver(option);
+    setFormData((prev) => ({ ...prev, driverId: option?.value || "" }));
+    if (errors.driverId && option) {
+      setErrors((prev) => ({ ...prev, driverId: "" }));
+    }
+  };
+
+  const handleVehicleSelect = (option: AutocompleteOption | null) => {
+    setSelectedVehicle(option);
+    setFormData((prev) => ({ ...prev, vehicleId: option?.value || "" }));
+  };
+
+  const handleTrailerSelect = (option: AutocompleteOption | null) => {
+    setSelectedTrailer(option);
+    setFormData((prev) => ({ ...prev, trailerId: option?.value || "" }));
   };
 
   const validate = (): boolean => {
@@ -358,29 +402,16 @@ export function OrderAssignmentDialog({
           {/* Driver */}
           <div className="space-y-2">
             <Label htmlFor="driverId">Kierowca *</Label>
-            <Select
-              value={formData.driverId}
-              onValueChange={(value) => handleSelectChange("driverId", value)}
-              disabled={resourcesLoading}
-            >
-              <SelectTrigger
-                className={errors.driverId ? "border-destructive" : ""}
-              >
-                <SelectValue placeholder="Wybierz kierowce..." />
-              </SelectTrigger>
-              <SelectContent>
-                {drivers.map((driver) => (
-                  <SelectItem key={driver.id} value={driver.id}>
-                    {driver.firstName} {driver.lastName}
-                    {driver.phone && (
-                      <span className="text-muted-foreground ml-2">
-                        ({driver.phone})
-                      </span>
-                    )}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <AutocompleteInput
+              value={driverInputValue}
+              onChange={setDriverInputValue}
+              onSelect={handleDriverSelect}
+              fetchOptions={fetchDrivers}
+              placeholder="Wyszukaj kierowce..."
+              disabled={loading}
+              selectedOption={selectedDriver}
+              error={!!errors.driverId}
+            />
             {errors.driverId && (
               <p className="text-sm text-destructive">{errors.driverId}</p>
             )}
@@ -390,49 +421,28 @@ export function OrderAssignmentDialog({
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="vehicleId">Pojazd</Label>
-              <Select
-                value={formData.vehicleId}
-                onValueChange={(value) => handleSelectChange("vehicleId", value)}
-                disabled={resourcesLoading}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Wybierz pojazd..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">Brak</SelectItem>
-                  {vehicles.map((vehicle) => (
-                    <SelectItem key={vehicle.id} value={vehicle.id}>
-                      {vehicle.registrationNumber}
-                      {vehicle.brand && (
-                        <span className="text-muted-foreground ml-2">
-                          ({vehicle.brand} {vehicle.model})
-                        </span>
-                      )}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <AutocompleteInput
+                value={vehicleInputValue}
+                onChange={setVehicleInputValue}
+                onSelect={handleVehicleSelect}
+                fetchOptions={fetchVehicles}
+                placeholder="Wyszukaj pojazd..."
+                disabled={loading}
+                selectedOption={selectedVehicle}
+              />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="trailerId">Naczepa</Label>
-              <Select
-                value={formData.trailerId}
-                onValueChange={(value) => handleSelectChange("trailerId", value)}
-                disabled={resourcesLoading}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Wybierz naczpe..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">Brak</SelectItem>
-                  {trailers.map((trailer) => (
-                    <SelectItem key={trailer.id} value={trailer.id}>
-                      {trailer.registrationNumber}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <AutocompleteInput
+                value={trailerInputValue}
+                onChange={setTrailerInputValue}
+                onSelect={handleTrailerSelect}
+                fetchOptions={fetchTrailers}
+                placeholder="Wyszukaj naczpe..."
+                disabled={loading}
+                selectedOption={selectedTrailer}
+              />
             </div>
           </div>
 
@@ -588,7 +598,7 @@ export function OrderAssignmentDialog({
             >
               Anuluj
             </Button>
-            <Button type="submit" disabled={loading || resourcesLoading}>
+            <Button type="submit" disabled={loading}>
               {loading ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : isEditing ? (

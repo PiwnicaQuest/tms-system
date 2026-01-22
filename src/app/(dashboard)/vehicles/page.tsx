@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
   TableBody,
@@ -48,8 +49,7 @@ import {
   Trash2,
   RefreshCw,
   Fuel,
-  Calendar,
-  AlertTriangle,
+  RotateCcw,
 } from "lucide-react";
 
 type VehicleStatus = "ACTIVE" | "INACTIVE" | "IN_SERVICE" | "SOLD";
@@ -140,6 +140,10 @@ export default function VehiclesPage() {
     totalPages: 0,
   });
 
+  // Tab state
+  const [activeTab, setActiveTab] = useState<"active" | "inactive">("active");
+  const [activeCounts, setActiveCounts] = useState({ active: 0, inactive: 0 });
+
   // Filter state
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -152,6 +156,24 @@ export default function VehiclesPage() {
   const [formLoading, setFormLoading] = useState(false);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
+  // Fetch counts for tabs
+  const fetchCounts = useCallback(async () => {
+    try {
+      const [activeRes, inactiveRes] = await Promise.all([
+        fetch("/api/vehicles?limit=1&isActive=true"),
+        fetch("/api/vehicles?limit=1&isActive=false"),
+      ]);
+      const activeData = await activeRes.json();
+      const inactiveData = await inactiveRes.json();
+      setActiveCounts({
+        active: activeData.pagination?.total || 0,
+        inactive: inactiveData.pagination?.total || 0,
+      });
+    } catch (error) {
+      console.error("Error fetching counts:", error);
+    }
+  }, []);
+
   // Fetch vehicles
   const fetchVehicles = useCallback(async () => {
     setLoading(true);
@@ -159,6 +181,7 @@ export default function VehiclesPage() {
       const params = new URLSearchParams();
       params.set("page", pagination.page.toString());
       params.set("limit", pagination.limit.toString());
+      params.set("isActive", activeTab === "active" ? "true" : "false");
       if (search) params.set("search", search);
       if (statusFilter && statusFilter !== "all") params.set("status", statusFilter);
       if (typeFilter && typeFilter !== "all") params.set("type", typeFilter);
@@ -174,11 +197,21 @@ export default function VehiclesPage() {
     } finally {
       setLoading(false);
     }
-  }, [pagination.page, pagination.limit, search, statusFilter, typeFilter]);
+  }, [pagination.page, pagination.limit, search, statusFilter, typeFilter, activeTab]);
 
   useEffect(() => {
     fetchVehicles();
   }, [fetchVehicles]);
+
+  useEffect(() => {
+    fetchCounts();
+  }, [fetchCounts]);
+
+  // Handle tab change
+  const handleTabChange = (value: string) => {
+    setActiveTab(value as "active" | "inactive");
+    setPagination((prev) => ({ ...prev, page: 1 }));
+  };
 
   // Handle search
   const handleSearch = (e: React.FormEvent) => {
@@ -231,9 +264,35 @@ export default function VehiclesPage() {
       }
 
       fetchVehicles();
+      fetchCounts();
     } catch (error) {
       console.error("Error deleting vehicle:", error);
       alert("Wystąpił błąd podczas usuwania pojazdu");
+    }
+  };
+
+  // Handle restore
+  const handleRestore = async (id: string) => {
+    if (!confirm("Czy na pewno chcesz przywrócić ten pojazd?")) return;
+
+    try {
+      const response = await fetch(`/api/vehicles/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: true, status: "ACTIVE" }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        alert(data.error || "Wystąpił błąd podczas przywracania pojazdu");
+        return;
+      }
+
+      fetchVehicles();
+      fetchCounts();
+    } catch (error) {
+      console.error("Error restoring vehicle:", error);
+      alert("Wystąpił błąd podczas przywracania pojazdu");
     }
   };
 
@@ -282,6 +341,7 @@ export default function VehiclesPage() {
 
       setShowDialog(false);
       fetchVehicles();
+      fetchCounts();
     } catch (error) {
       console.error("Error saving vehicle:", error);
       alert("Wystąpił błąd podczas zapisywania pojazdu");
@@ -290,13 +350,164 @@ export default function VehiclesPage() {
     }
   };
 
-  // Calculate stats
+  // Calculate stats for current view
   const stats = {
     total: pagination.total,
     active: vehicles.filter((v) => v.status === "ACTIVE").length,
     inService: vehicles.filter((v) => v.status === "IN_SERVICE").length,
     inactive: vehicles.filter((v) => v.status === "INACTIVE" || v.status === "SOLD").length,
   };
+
+  // Render vehicle table
+  const renderVehicleTable = () => (
+    <>
+      {loading ? (
+        <div className="flex items-center justify-center py-8">
+          <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      ) : vehicles.length === 0 ? (
+        <div className="text-center py-8 text-muted-foreground">
+          {activeTab === "active"
+            ? "Nie znaleziono aktywnych pojazdów"
+            : "Brak nieaktywnych pojazdów"}
+        </div>
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Nr rejestracyjny</TableHead>
+              <TableHead>Marka / Model</TableHead>
+              <TableHead>Typ</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Paliwo</TableHead>
+              <TableHead>Ładowność</TableHead>
+              <TableHead className="text-right">Akcje</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {vehicles.map((vehicle) => (
+              <TableRow key={vehicle.id} className={!vehicle.isActive ? "opacity-60" : ""}>
+                <TableCell>
+                  <Link
+                    href={`/vehicles/${vehicle.id}`}
+                    className="font-mono font-medium hover:underline"
+                  >
+                    {vehicle.registrationNumber}
+                  </Link>
+                </TableCell>
+                <TableCell>
+                  <div>
+                    <p className="font-medium">{vehicle.brand || "-"}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {vehicle.model} {vehicle.year ? `(${vehicle.year})` : ""}
+                    </p>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <Badge variant="outline">{typeLabels[vehicle.type]}</Badge>
+                </TableCell>
+                <TableCell>
+                  <Badge
+                    variant="secondary"
+                    className={`${statusColors[vehicle.status]} text-white`}
+                  >
+                    {statusLabels[vehicle.status]}
+                  </Badge>
+                </TableCell>
+                <TableCell>
+                  {vehicle.fuelType ? (
+                    <div className="flex items-center gap-1">
+                      <Fuel className="h-4 w-4 text-muted-foreground" />
+                      {fuelLabels[vehicle.fuelType]}
+                    </div>
+                  ) : (
+                    <span className="text-muted-foreground">-</span>
+                  )}
+                </TableCell>
+                <TableCell>
+                  {vehicle.loadCapacity ? (
+                    <span>{vehicle.loadCapacity.toLocaleString("pl-PL")} kg</span>
+                  ) : (
+                    <span className="text-muted-foreground">-</span>
+                  )}
+                </TableCell>
+                <TableCell className="text-right">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon">
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem asChild>
+                        <Link href={`/vehicles/${vehicle.id}`}>
+                          <Eye className="mr-2 h-4 w-4" />
+                          Szczegóły
+                        </Link>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleEdit(vehicle)}>
+                        <Pencil className="mr-2 h-4 w-4" />
+                        Edytuj
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      {activeTab === "active" ? (
+                        <DropdownMenuItem
+                          onClick={() => handleDelete(vehicle.id)}
+                          className="text-red-600"
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Usuń
+                        </DropdownMenuItem>
+                      ) : (
+                        <DropdownMenuItem
+                          onClick={() => handleRestore(vehicle.id)}
+                          className="text-emerald-600"
+                        >
+                          <RotateCcw className="mr-2 h-4 w-4" />
+                          Przywróć
+                        </DropdownMenuItem>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+
+      {/* Pagination */}
+      {pagination.totalPages > 1 && (
+        <div className="flex items-center justify-between mt-4">
+          <p className="text-sm text-muted-foreground">
+            Strona {pagination.page} z {pagination.totalPages}
+          </p>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                setPagination((prev) => ({ ...prev, page: prev.page - 1 }))
+              }
+              disabled={pagination.page <= 1}
+            >
+              Poprzednia
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                setPagination((prev) => ({ ...prev, page: prev.page + 1 }))
+              }
+              disabled={pagination.page >= pagination.totalPages}
+            >
+              Następna
+            </Button>
+          </div>
+        </div>
+      )}
+    </>
+  );
 
   return (
     <div className="space-y-6">
@@ -326,7 +537,7 @@ export default function VehiclesPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{stats.total}</p>
+            <p className="text-2xl font-bold">{activeCounts.active + activeCounts.inactive}</p>
           </CardContent>
         </Card>
         <Card>
@@ -337,7 +548,7 @@ export default function VehiclesPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{stats.active}</p>
+            <p className="text-2xl font-bold">{activeCounts.active}</p>
           </CardContent>
         </Card>
         <Card>
@@ -359,201 +570,130 @@ export default function VehiclesPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{stats.inactive}</p>
+            <p className="text-2xl font-bold">{activeCounts.inactive}</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Filters */}
-      <Card>
-        <CardContent className="pt-6">
-          <form onSubmit={handleSearch} className="flex flex-wrap gap-4">
-            <div className="flex-1 min-w-[200px]">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder="Szukaj po nr rejestracyjnym, marce..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="pl-9"
-                />
-              </div>
-            </div>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[180px]">
-                <Filter className="mr-2 h-4 w-4" />
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Wszystkie</SelectItem>
-                {Object.entries(statusLabels).map(([key, label]) => (
-                  <SelectItem key={key} value={key}>
-                    {label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={typeFilter} onValueChange={setTypeFilter}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Typ" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Wszystkie</SelectItem>
-                {Object.entries(typeLabels).map(([key, label]) => (
-                  <SelectItem key={key} value={key}>
-                    {label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </form>
-        </CardContent>
-      </Card>
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={handleTabChange}>
+        <TabsList>
+          <TabsTrigger value="active">
+            Aktywne ({activeCounts.active})
+          </TabsTrigger>
+          <TabsTrigger value="inactive">
+            Nieaktywne ({activeCounts.inactive})
+          </TabsTrigger>
+        </TabsList>
 
-      {/* Vehicles Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Lista pojazdów</CardTitle>
-          <CardDescription>
-            Znaleziono {pagination.total} pojazdów
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="flex items-center justify-center py-8">
-              <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
-          ) : vehicles.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              Nie znaleziono pojazdów
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Nr rejestracyjny</TableHead>
-                  <TableHead>Marka / Model</TableHead>
-                  <TableHead>Typ</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Paliwo</TableHead>
-                  <TableHead>Ładowność</TableHead>
-                  <TableHead className="text-right">Akcje</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {vehicles.map((vehicle) => (
-                  <TableRow key={vehicle.id}>
-                    <TableCell>
-                      <Link
-                        href={`/vehicles/${vehicle.id}`}
-                        className="font-mono font-medium hover:underline"
-                      >
-                        {vehicle.registrationNumber}
-                      </Link>
-                    </TableCell>
-                    <TableCell>
-                      <div>
-                        <p className="font-medium">{vehicle.brand || "-"}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {vehicle.model} {vehicle.year ? `(${vehicle.year})` : ""}
-                        </p>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{typeLabels[vehicle.type]}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant="secondary"
-                        className={`${statusColors[vehicle.status]} text-white`}
-                      >
-                        {statusLabels[vehicle.status]}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {vehicle.fuelType ? (
-                        <div className="flex items-center gap-1">
-                          <Fuel className="h-4 w-4 text-muted-foreground" />
-                          {fuelLabels[vehicle.fuelType]}
-                        </div>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {vehicle.loadCapacity ? (
-                        <span>{vehicle.loadCapacity.toLocaleString("pl-PL")} kg</span>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem asChild>
-                            <Link href={`/vehicles/${vehicle.id}`}>
-                              <Eye className="mr-2 h-4 w-4" />
-                              Szczegóły
-                            </Link>
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleEdit(vehicle)}>
-                            <Pencil className="mr-2 h-4 w-4" />
-                            Edytuj
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            onClick={() => handleDelete(vehicle.id)}
-                            className="text-red-600"
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Usuń
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
+        <TabsContent value="active" className="space-y-4">
+          {/* Filters */}
+          <Card>
+            <CardContent className="pt-6">
+              <form onSubmit={handleSearch} className="flex flex-wrap gap-4">
+                <div className="flex-1 min-w-[200px]">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      placeholder="Szukaj po nr rejestracyjnym, marce..."
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      className="pl-9"
+                    />
+                  </div>
+                </div>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-[180px]">
+                    <Filter className="mr-2 h-4 w-4" />
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Wszystkie</SelectItem>
+                    {Object.entries(statusLabels).map(([key, label]) => (
+                      <SelectItem key={key} value={key}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={typeFilter} onValueChange={setTypeFilter}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="Typ" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Wszystkie</SelectItem>
+                    {Object.entries(typeLabels).map(([key, label]) => (
+                      <SelectItem key={key} value={key}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </form>
+            </CardContent>
+          </Card>
 
-          {/* Pagination */}
-          {pagination.totalPages > 1 && (
-            <div className="flex items-center justify-between mt-4">
-              <p className="text-sm text-muted-foreground">
-                Strona {pagination.page} z {pagination.totalPages}
-              </p>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    setPagination((prev) => ({ ...prev, page: prev.page - 1 }))
-                  }
-                  disabled={pagination.page <= 1}
-                >
-                  Poprzednia
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    setPagination((prev) => ({ ...prev, page: prev.page + 1 }))
-                  }
-                  disabled={pagination.page >= pagination.totalPages}
-                >
-                  Następna
-                </Button>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+          {/* Vehicles Table */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Aktywne pojazdy</CardTitle>
+              <CardDescription>
+                Znaleziono {pagination.total} pojazdów
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {renderVehicleTable()}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="inactive" className="space-y-4">
+          {/* Filters */}
+          <Card>
+            <CardContent className="pt-6">
+              <form onSubmit={handleSearch} className="flex flex-wrap gap-4">
+                <div className="flex-1 min-w-[200px]">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      placeholder="Szukaj po nr rejestracyjnym, marce..."
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      className="pl-9"
+                    />
+                  </div>
+                </div>
+                <Select value={typeFilter} onValueChange={setTypeFilter}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="Typ" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Wszystkie</SelectItem>
+                    {Object.entries(typeLabels).map(([key, label]) => (
+                      <SelectItem key={key} value={key}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </form>
+            </CardContent>
+          </Card>
+
+          {/* Vehicles Table */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Nieaktywne pojazdy</CardTitle>
+              <CardDescription>
+                Znaleziono {pagination.total} pojazdów
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {renderVehicleTable()}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
       {/* Add/Edit Dialog */}
       <Dialog open={showDialog} onOpenChange={setShowDialog}>

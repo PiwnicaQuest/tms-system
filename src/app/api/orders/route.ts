@@ -40,7 +40,6 @@ export async function GET(request: NextRequest) {
 
     // Build where clause - always filter by tenantId
     const where: Prisma.OrderWhereInput = {
-      tenantId,
     };
 
     if (status) {
@@ -220,9 +219,11 @@ export async function POST(request: NextRequest) {
           origin: body.origin,
           originCity: body.originCity || null,
           originCountry: body.originCountry || "PL",
+          originPostalCode: body.originPostalCode || null,
           destination: body.destination,
           destinationCity: body.destinationCity || null,
           destinationCountry: body.destinationCountry || "PL",
+          destinationPostalCode: body.destinationPostalCode || null,
           distanceKm: body.distanceKm ? parseFloat(body.distanceKm) : null,
           loadingDate,
           loadingTimeFrom: body.loadingTimeFrom || null,
@@ -294,7 +295,7 @@ export async function POST(request: NextRequest) {
 
           await tx.orderAssignment.create({
             data: {
-              tenantId,
+          tenantId,
               orderId: newOrder.id,
               driverId: assignment.driverId,
               vehicleId: assignment.vehicleId || null,
@@ -314,7 +315,7 @@ export async function POST(request: NextRequest) {
         // Fallback to single assignment for backwards compatibility
         await tx.orderAssignment.create({
           data: {
-            tenantId,
+          tenantId,
             orderId: newOrder.id,
             driverId: body.driverId,
             vehicleId: body.vehicleId || null,
@@ -331,6 +332,26 @@ export async function POST(request: NextRequest) {
         });
       }
 
+
+      // Create waypoints if provided
+      if (body.waypoints && Array.isArray(body.waypoints) && body.waypoints.length > 0) {
+        for (const waypoint of body.waypoints) {
+          await tx.waypoint.create({
+            data: {
+              orderId: newOrder.id,
+              sequence: waypoint.sequence || 1,
+              type: waypoint.type || "STOP",
+              address: waypoint.address || "",
+              city: waypoint.city || null,
+              postalCode: waypoint.postalCode || null,
+              country: waypoint.country || "PL",
+              scheduledDate: waypoint.scheduledDate ? new Date(waypoint.scheduledDate) : null,
+              scheduledTime: waypoint.scheduledTime || null,
+              notes: waypoint.notes || null,
+            },
+          });
+        }
+      }
       return newOrder;
     });
 

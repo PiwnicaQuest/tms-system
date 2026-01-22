@@ -54,6 +54,7 @@ import {
   Download,
   CheckCircle,
 } from "lucide-react";
+import { AutocompleteInput, AutocompleteOption, fetchContractors } from "@/components/ui/autocomplete-input";
 
 // Invoice status type
 type InvoiceStatus = "DRAFT" | "ISSUED" | "SENT" | "PAID" | "OVERDUE" | "CANCELLED";
@@ -138,12 +139,11 @@ function InvoicesPageContent() {
   // Filter state
   const [showFilters, setShowFilters] = useState(false);
   const [status, setStatus] = useState(searchParams.get("status") || "all");
-  const [contractorId, setContractorId] = useState(searchParams.get("contractorId") || "all");
+  const [contractorId, setContractorId] = useState(searchParams.get("contractorId") || "");
+  const [contractorSearch, setContractorSearch] = useState("");
+  const [selectedContractor, setSelectedContractor] = useState<AutocompleteOption | null>(null);
   const [startDate, setStartDate] = useState(searchParams.get("startDate") || "");
   const [endDate, setEndDate] = useState(searchParams.get("endDate") || "");
-
-  // Resources for filters
-  const [contractors, setContractors] = useState<Contractor[]>([]);
 
   // Fetch invoices
   const fetchInvoices = useCallback(async () => {
@@ -153,7 +153,7 @@ function InvoicesPageContent() {
       params.set("page", pagination.page.toString());
       params.set("limit", pagination.limit.toString());
       if (status && status !== "all") params.set("status", status);
-      if (contractorId && contractorId !== "all") params.set("contractorId", contractorId);
+      if (contractorId) params.set("contractorId", contractorId);
       if (startDate) params.set("startDate", startDate);
       if (endDate) params.set("endDate", endDate);
 
@@ -170,23 +170,6 @@ function InvoicesPageContent() {
     }
   }, [pagination.page, pagination.limit, status, contractorId, startDate, endDate]);
 
-  // Fetch contractors for filters
-  useEffect(() => {
-    const fetchContractors = async () => {
-      try {
-        const response = await fetch("/api/contractors?limit=200");
-        if (response.ok) {
-          const data = await response.json();
-          setContractors(data.data || []);
-        }
-      } catch (error) {
-        console.error("Error fetching contractors:", error);
-      }
-    };
-
-    fetchContractors();
-  }, []);
-
   // Fetch invoices on mount and filter change
   useEffect(() => {
     fetchInvoices();
@@ -195,7 +178,9 @@ function InvoicesPageContent() {
   // Clear filters
   const clearFilters = () => {
     setStatus("all");
-    setContractorId("all");
+    setContractorId("");
+    setContractorSearch("");
+    setSelectedContractor(null);
     setStartDate("");
     setEndDate("");
     setPagination((prev) => ({ ...prev, page: 1 }));
@@ -286,7 +271,7 @@ function InvoicesPageContent() {
   };
 
   // Check if filters are active
-  const hasActiveFilters = (status && status !== "all") || (contractorId && contractorId !== "all") || startDate || endDate;
+  const hasActiveFilters = (status && status !== "all") || contractorId || startDate || endDate;
 
   // Get status badge style
   const getStatusBadgeClass = (invoiceStatus: InvoiceStatus) => {
@@ -307,6 +292,13 @@ function InvoicesPageContent() {
       default:
         return baseClasses;
     }
+  };
+
+  // Handle contractor selection
+  const handleContractorSelect = (option: AutocompleteOption | null) => {
+    setSelectedContractor(option);
+    setContractorId(option?.value || "");
+    setPagination((prev) => ({ ...prev, page: 1 }));
   };
 
   return (
@@ -390,19 +382,14 @@ function InvoicesPageContent() {
 
                 <div className="space-y-2">
                   <Label>Kontrahent</Label>
-                  <Select value={contractorId} onValueChange={setContractorId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Wszyscy" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Wszyscy</SelectItem>
-                      {contractors.map((contractor) => (
-                        <SelectItem key={contractor.id} value={contractor.id}>
-                          {contractor.shortName || contractor.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <AutocompleteInput
+                    value={contractorSearch}
+                    onChange={setContractorSearch}
+                    onSelect={handleContractorSelect}
+                    fetchOptions={fetchContractors}
+                    placeholder="Wyszukaj kontrahenta..."
+                    selectedOption={selectedContractor}
+                  />
                 </div>
 
                 <div className="space-y-2">

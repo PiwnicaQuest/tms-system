@@ -130,7 +130,7 @@ export const authConfig: NextAuthConfig = {
         pathname.startsWith("/contractors") ||
         pathname.startsWith("/reports") ||
         pathname.startsWith("/gps") ||
-        pathname.startsWith("/calendar") ||
+        pathname.startsWith("/calendar") || pathname.startsWith("/notes") || pathname.startsWith("/webhooks") ||
         pathname.startsWith("/import") ||
         pathname.startsWith("/export") ||
         pathname.startsWith("/audit-logs") ||

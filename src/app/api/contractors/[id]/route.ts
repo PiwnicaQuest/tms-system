@@ -13,6 +13,11 @@ const contractorUpdateSchema = z.object({
   city: z.string().optional(),
   postalCode: z.string().optional(),
   country: z.string().optional(),
+  // Adres korespondencyjny
+  corrAddress: z.string().optional(),
+  corrCity: z.string().optional(),
+  corrPostalCode: z.string().optional(),
+  corrCountry: z.string().optional(),
   phone: z.string().optional(),
   email: z.string().email().optional().or(z.literal("")),
   website: z.string().optional(),

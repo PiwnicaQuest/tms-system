@@ -27,7 +27,6 @@ import {
   ArrowLeft,
   Save,
   MapPin,
-  Calendar,
   Truck,
   Building2,
   FileText,
@@ -44,36 +43,16 @@ import {
   Contractor as ContractorFull,
 } from "@/components/contractors/ContractorQuickAddDialog";
 import { AddressAutocomplete } from "@/components/addresses/AddressAutocomplete";
+import {
+  AutocompleteInput,
+  AutocompleteOption,
+  fetchContractors,
+  fetchDrivers,
+  fetchVehicles,
+  fetchTrailers,
+} from "@/components/ui/autocomplete-input";
 
 // Types
-interface Contractor {
-  id: string;
-  name: string;
-  shortName: string | null;
-  type: "CLIENT" | "CARRIER" | "BOTH";
-}
-
-interface Driver {
-  id: string;
-  firstName: string;
-  lastName: string;
-  status: string;
-}
-
-interface Vehicle {
-  id: string;
-  registrationNumber: string;
-  type: string;
-  status: string;
-}
-
-interface Trailer {
-  id: string;
-  registrationNumber: string;
-  type: string;
-  status: string;
-}
-
 interface PlannedAssignment {
   id: string; // Tymczasowe ID dla UI
   driverId: string;
@@ -84,6 +63,14 @@ interface PlannedAssignment {
   notes: string;
 }
 
+
+interface Waypoint {
+  id?: string;
+  address: string;
+  city: string;
+  postalCode: string;
+  country: string;
+}
 interface FormData {
   orderNumber: string;
   externalNumber: string;
@@ -96,9 +83,11 @@ interface FormData {
   origin: string;
   originCity: string;
   originCountry: string;
+  originPostalCode: string;
   destination: string;
   destinationCity: string;
   destinationCountry: string;
+  destinationPostalCode: string;
   distanceKm: string;
   loadingDate: string;
   loadingTimeFrom: string;
@@ -135,9 +124,11 @@ const initialFormData: FormData = {
   origin: "",
   originCity: "",
   originCountry: "PL",
+  originPostalCode: "",
   destination: "",
   destinationCity: "",
   destinationCountry: "PL",
+  destinationPostalCode: "",
   distanceKm: "",
   loadingDate: "",
   loadingTimeFrom: "",
@@ -194,112 +185,35 @@ export default function NewOrderPage() {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [assignments, setAssignments] = useState<PlannedAssignment[]>([]);
+  const [waypoints, setWaypoints] = useState<Waypoint[]>([]);
 
-  // Resources
-  const [contractors, setContractors] = useState<Contractor[]>([]);
-  const [drivers, setDrivers] = useState<Driver[]>([]);
-  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
-  const [trailers, setTrailers] = useState<Trailer[]>([]);
-  const [loadingResources, setLoadingResources] = useState(true);
+  // Selected autocomplete options state
+  const [selectedContractor, setSelectedContractor] = useState<AutocompleteOption | null>(null);
+  const [selectedSubcontractor, setSelectedSubcontractor] = useState<AutocompleteOption | null>(null);
 
-  // Fetch resources
-  useEffect(() => {
-    const fetchResources = async () => {
-      try {
-        // Fetch all resources without status filter to ensure data is loaded
-        const [contractorsRes, driversRes, vehiclesRes, trailersRes] =
-          await Promise.all([
-            fetch("/api/contractors?limit=200"),
-            fetch("/api/drivers?limit=200"),
-            fetch("/api/vehicles?limit=200"),
-            fetch("/api/trailers?limit=200"),
-          ]);
-
-        // Debug logging
-        console.log("API Responses:", {
-          contractors: contractorsRes.status,
-          drivers: driversRes.status,
-          vehicles: vehiclesRes.status,
-          trailers: trailersRes.status,
-        });
-
-        if (contractorsRes.ok) {
-          const data = await contractorsRes.json();
-          console.log("Contractors loaded:", data.data?.length || 0);
-          setContractors(data.data || []);
-        } else {
-          console.error("Contractors error:", await contractorsRes.text());
-        }
-
-        if (driversRes.ok) {
-          const data = await driversRes.json();
-          console.log("Drivers loaded:", data.data?.length || 0);
-          // Filter to show only active drivers in dropdown, but log all
-          const activeDrivers = (data.data || []).filter(
-            (d: Driver) => d.status === "ACTIVE"
-          );
-          console.log("Active drivers:", activeDrivers.length);
-          setDrivers(activeDrivers.length > 0 ? activeDrivers : data.data || []);
-        } else {
-          console.error("Drivers error:", await driversRes.text());
-        }
-
-        if (vehiclesRes.ok) {
-          const data = await vehiclesRes.json();
-          console.log("Vehicles loaded:", data.data?.length || 0);
-          // Filter to show only active vehicles
-          const activeVehicles = (data.data || []).filter(
-            (v: Vehicle) => v.status === "ACTIVE"
-          );
-          console.log("Active vehicles:", activeVehicles.length);
-          setVehicles(activeVehicles.length > 0 ? activeVehicles : data.data || []);
-        } else {
-          console.error("Vehicles error:", await vehiclesRes.text());
-        }
-
-        if (trailersRes.ok) {
-          const data = await trailersRes.json();
-          console.log("Trailers loaded:", data.data?.length || 0);
-          // Filter to show only active trailers
-          const activeTrailers = (data.data || []).filter(
-            (t: Trailer) => t.status === "ACTIVE"
-          );
-          console.log("Active trailers:", activeTrailers.length);
-          setTrailers(activeTrailers.length > 0 ? activeTrailers : data.data || []);
-        } else {
-          console.error("Trailers error:", await trailersRes.text());
-        }
-      } catch (error) {
-        console.error("Error fetching resources:", error);
-      } finally {
-        setLoadingResources(false);
-      }
-    };
-
-    fetchResources();
-  }, []);
-
-  // Fetch contractors (separate function for refresh after adding new)
-  const fetchContractors = async () => {
-    try {
-      const response = await fetch("/api/contractors?limit=200");
-      if (response.ok) {
-        const data = await response.json();
-        setContractors(data.data || []);
-      }
-    } catch (error) {
-      console.error("Error fetching contractors:", error);
-    }
-  };
+  // Assignment selected options - map by assignment id
+  const [assignmentSelectedOptions, setAssignmentSelectedOptions] = useState<Record<string, {
+    driver: AutocompleteOption | null;
+    vehicle: AutocompleteOption | null;
+    trailer: AutocompleteOption | null;
+  }>>({});
 
   // Handle contractor added from quick add dialog
   const handleContractorAdded = (
     contractor: ContractorFull,
     field: "contractorId" | "subcontractorId"
   ) => {
-    // Add the new contractor to the list
-    setContractors((prev) => [...prev, contractor as unknown as Contractor]);
-    // Select the new contractor
+    const option: AutocompleteOption = {
+      value: contractor.id,
+      label: contractor.shortName || contractor.name,
+      description: contractor.nip ? `NIP: ${contractor.nip}` : undefined,
+    };
+
+    if (field === "contractorId") {
+      setSelectedContractor(option);
+    } else {
+      setSelectedSubcontractor(option);
+    }
     setFormData((prev) => ({ ...prev, [field]: contractor.id }));
   };
 
@@ -351,8 +265,9 @@ export default function NewOrderPage() {
 
   // Assignment management functions
   const addAssignment = () => {
+    const newId = `temp-${Date.now()}`;
     const newAssignment: PlannedAssignment = {
-      id: `temp-${Date.now()}`,
+      id: newId,
       driverId: "none",
       vehicleId: "none",
       trailerId: "none",
@@ -361,10 +276,19 @@ export default function NewOrderPage() {
       notes: "",
     };
     setAssignments((prev) => [...prev, newAssignment]);
+    setAssignmentSelectedOptions((prev) => ({
+      ...prev,
+      [newId]: { driver: null, vehicle: null, trailer: null },
+    }));
   };
 
   const removeAssignment = (id: string) => {
     setAssignments((prev) => prev.filter((a) => a.id !== id));
+    setAssignmentSelectedOptions((prev) => {
+      const newState = { ...prev };
+      delete newState[id];
+      return newState;
+    });
   };
 
   const updateAssignment = (id: string, field: keyof PlannedAssignment, value: string | number) => {
@@ -373,6 +297,33 @@ export default function NewOrderPage() {
     );
   };
 
+  const updateAssignmentSelectedOption = (
+    id: string,
+    field: "driver" | "vehicle" | "trailer",
+    option: AutocompleteOption | null
+  ) => {
+    setAssignmentSelectedOptions((prev) => ({
+      ...prev,
+      [id]: {
+        ...(prev[id] || { driver: null, vehicle: null, trailer: null }),
+        [field]: option,
+      },
+    }));
+  };
+
+
+  // Waypoint management functions
+  const addWaypoint = () => {
+    setWaypoints(prev => [...prev, { address: "", city: "", postalCode: "", country: "PL" }]);
+  };
+
+  const removeWaypoint = (index: number) => {
+    setWaypoints(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const updateWaypoint = (index: number, field: keyof Waypoint, value: string) => {
+    setWaypoints(prev => prev.map((wp, i) => i === index ? { ...wp, [field]: value } : wp));
+  };
   const getTotalRevenueShare = () => {
     return assignments.reduce((sum, a) => sum + a.revenueShare, 0);
   };
@@ -388,22 +339,6 @@ export default function NewOrderPage() {
         revenueShare: sharePerAssignment + (index === 0 ? remainder : 0),
       }))
     );
-  };
-
-  // Get driver/vehicle/trailer names for display
-  const getDriverName = (driverId: string) => {
-    const driver = drivers.find((d) => d.id === driverId);
-    return driver ? `${driver.firstName} ${driver.lastName}` : "Nieprzypisany";
-  };
-
-  const getVehicleName = (vehicleId: string) => {
-    const vehicle = vehicles.find((v) => v.id === vehicleId);
-    return vehicle ? vehicle.registrationNumber : "Nieprzypisany";
-  };
-
-  const getTrailerName = (trailerId: string) => {
-    const trailer = trailers.find((t) => t.id === trailerId);
-    return trailer ? trailer.registrationNumber : "Nieprzypisana";
   };
 
   // Validate form
@@ -494,6 +429,14 @@ export default function NewOrderPage() {
           trailerId: primaryAssignment?.trailerId || (formData.trailerId && formData.trailerId !== "none" ? formData.trailerId : null),
           // Multi-assignment array
           assignments: apiAssignments.length > 0 ? apiAssignments : undefined,
+          waypoints: waypoints.filter(wp => wp.address || wp.city).map((wp, index) => ({
+            sequence: index + 1,
+            type: "STOP",
+            address: wp.address,
+            city: wp.city,
+            postalCode: wp.postalCode,
+            country: wp.country,
+          })),
         }),
       });
 
@@ -516,14 +459,6 @@ export default function NewOrderPage() {
       setLoading(false);
     }
   };
-
-  // Filter contractors by type
-  const clientContractors = contractors.filter(
-    (c) => c.type === "CLIENT" || c.type === "BOTH"
-  );
-  const carrierContractors = contractors.filter(
-    (c) => c.type === "CARRIER" || c.type === "BOTH"
-  );
 
   return (
     <div className="space-y-6">
@@ -658,25 +593,19 @@ export default function NewOrderPage() {
                       Klient / Zleceniodawca
                     </Label>
                     <div className="flex gap-2">
-                      <Select
-                        value={formData.contractorId}
-                        onValueChange={(value) =>
-                          handleSelectChange("contractorId", value)
-                        }
-                        disabled={loadingResources}
-                      >
-                        <SelectTrigger className="flex-1">
-                          <SelectValue placeholder="Wybierz klienta" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">Brak</SelectItem>
-                          {clientContractors.map((contractor) => (
-                            <SelectItem key={contractor.id} value={contractor.id}>
-                              {contractor.shortName || contractor.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <div className="flex-1">
+                        <AutocompleteInput
+                          value={formData.contractorId}
+                          onChange={(val) => handleSelectChange("contractorId", val)}
+                          onSelect={(option) => {
+                            setSelectedContractor(option);
+                            handleSelectChange("contractorId", option?.value || "none");
+                          }}
+                          fetchOptions={fetchContractors}
+                          placeholder="Wyszukaj klienta..."
+                          selectedOption={selectedContractor}
+                        />
+                      </div>
                       <ContractorQuickAddDialog
                         defaultType="CLIENT"
                         onSuccess={(contractor) =>
@@ -696,28 +625,19 @@ export default function NewOrderPage() {
                         Przewoznik / Podwykonawca
                       </Label>
                       <div className="flex gap-2">
-                        <Select
-                          value={formData.subcontractorId}
-                          onValueChange={(value) =>
-                            handleSelectChange("subcontractorId", value)
-                          }
-                          disabled={loadingResources}
-                        >
-                          <SelectTrigger className="flex-1">
-                            <SelectValue placeholder="Wybierz przewoznika" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">Brak</SelectItem>
-                            {carrierContractors.map((contractor) => (
-                              <SelectItem
-                                key={contractor.id}
-                                value={contractor.id}
-                              >
-                                {contractor.shortName || contractor.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <div className="flex-1">
+                          <AutocompleteInput
+                            value={formData.subcontractorId}
+                            onChange={(val) => handleSelectChange("subcontractorId", val)}
+                            onSelect={(option) => {
+                              setSelectedSubcontractor(option);
+                              handleSelectChange("subcontractorId", option?.value || "none");
+                            }}
+                            fetchOptions={fetchContractors}
+                            placeholder="Wyszukaj przewoznika..."
+                            selectedOption={selectedSubcontractor}
+                          />
+                        </div>
                         <ContractorQuickAddDialog
                           defaultType="CARRIER"
                           onSuccess={(contractor) =>
@@ -816,6 +736,7 @@ export default function NewOrderPage() {
                         placeholder="Miasto"
                       />
                     </div>
+<div className="space-y-2">                      <Label htmlFor="originPostalCode">Kod pocztowy</Label>                      <Input                        id="originPostalCode"                        name="originPostalCode"                        value={formData.originPostalCode}                        onChange={handleChange}                        placeholder="00-000"                      />                    </div>
 
                     <div className="space-y-2">
                       <Label htmlFor="originCountry">Kraj</Label>
@@ -883,6 +804,95 @@ export default function NewOrderPage() {
 
                 <Separator />
 
+                {/* Waypoints */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-semibold text-blue-600 flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full bg-blue-600" />
+                      Punkty posrednie
+                    </h3>
+                    <Button type="button" variant="outline" size="sm" onClick={addWaypoint}>
+                      <Plus className="mr-2 h-4 w-4" />
+                      Dodaj punkt
+                    </Button>
+                  </div>
+
+                  {waypoints.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      Brak punktow posrednich. Kliknij przycisk powyzej, aby dodac.
+                    </p>
+                  ) : (
+                    <div className="space-y-4">
+                      {waypoints.map((waypoint, index) => (
+                        <Card key={index} className="border-blue-200">
+                          <CardContent className="pt-4">
+                            <div className="flex items-start justify-between mb-4">
+                              <span className="text-sm font-medium text-blue-600">
+                                Punkt {index + 1}
+                              </span>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => removeWaypoint(index)}
+                                className="text-destructive hover:text-destructive"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                            <div className="grid gap-4 md:grid-cols-4">
+                              <div className="space-y-2 md:col-span-2">
+                                <Label>Adres</Label>
+                                <Input
+                                  value={waypoint.address}
+                                  onChange={(e) => updateWaypoint(index, "address", e.target.value)}
+                                  placeholder="Ulica, numer"
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <Label>Miasto</Label>
+                                <Input
+                                  value={waypoint.city}
+                                  onChange={(e) => updateWaypoint(index, "city", e.target.value)}
+                                  placeholder="Miasto"
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <Label>Kod pocztowy</Label>
+                                <Input
+                                  value={waypoint.postalCode}
+                                  onChange={(e) => updateWaypoint(index, "postalCode", e.target.value)}
+                                  placeholder="00-000"
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <Label>Kraj</Label>
+                                <Select
+                                  value={waypoint.country}
+                                  onValueChange={(value) => updateWaypoint(index, "country", value)}
+                                >
+                                  <SelectTrigger>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {countries.map((country) => (
+                                      <SelectItem key={country.code} value={country.code}>
+                                        {country.name}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <Separator />
+
                 {/* Unloading */}
                 <div className="space-y-4">
                   <h3 className="font-semibold text-red-600 flex items-center gap-2">
@@ -930,6 +940,7 @@ export default function NewOrderPage() {
                         placeholder="Miasto"
                       />
                     </div>
+<div className="space-y-2">                      <Label htmlFor="destinationPostalCode">Kod pocztowy</Label>                      <Input                        id="destinationPostalCode"                        name="destinationPostalCode"                        value={formData.destinationPostalCode}                        onChange={handleChange}                        placeholder="00-000"                      />                    </div>
 
                     <div className="space-y-2">
                       <Label htmlFor="destinationCountry">Kraj</Label>
@@ -1117,20 +1128,10 @@ export default function NewOrderPage() {
                 </CardTitle>
                 <CardDescription>
                   Przypisz kierowcow i pojazdy do zlecenia. Mozesz przypisac wielu kierowcow z podzialem przychodu.
-                  {!loadingResources && (
-                    <span className="ml-2 text-xs">
-                      (Dostepne: {drivers.length} kierowcow, {vehicles.length} pojazdow, {trailers.length} naczep)
-                    </span>
-                  )}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                {loadingResources ? (
-                  <div className="flex items-center justify-center py-8">
-                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                    <span className="ml-2 text-muted-foreground">Ladowanie danych...</span>
-                  </div>
-                ) : formData.type === "OWN" ? (
+                {formData.type === "OWN" ? (
                   <div className="space-y-4">
                     {/* Assignments List */}
                     {assignments.length === 0 ? (
@@ -1206,68 +1207,47 @@ export default function NewOrderPage() {
                               <div className="grid gap-4 md:grid-cols-3">
                                 <div className="space-y-2">
                                   <Label>Kierowca *</Label>
-                                  <Select
+                                  <AutocompleteInput
                                     value={assignment.driverId}
-                                    onValueChange={(value) =>
-                                      updateAssignment(assignment.id, "driverId", value)
-                                    }
-                                  >
-                                    <SelectTrigger>
-                                      <SelectValue placeholder="Wybierz kierowce" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="none">Nieprzypisany</SelectItem>
-                                      {drivers.map((driver) => (
-                                        <SelectItem key={driver.id} value={driver.id}>
-                                          {driver.firstName} {driver.lastName}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
+                                    onChange={(val) => updateAssignment(assignment.id, "driverId", val)}
+                                    onSelect={(option) => {
+                                      updateAssignmentSelectedOption(assignment.id, "driver", option);
+                                      updateAssignment(assignment.id, "driverId", option?.value || "none");
+                                    }}
+                                    fetchOptions={fetchDrivers}
+                                    placeholder="Wyszukaj kierowce..."
+                                    selectedOption={assignmentSelectedOptions[assignment.id]?.driver || null}
+                                  />
                                 </div>
 
                                 <div className="space-y-2">
                                   <Label>Pojazd</Label>
-                                  <Select
+                                  <AutocompleteInput
                                     value={assignment.vehicleId}
-                                    onValueChange={(value) =>
-                                      updateAssignment(assignment.id, "vehicleId", value)
-                                    }
-                                  >
-                                    <SelectTrigger>
-                                      <SelectValue placeholder="Wybierz pojazd" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="none">Nieprzypisany</SelectItem>
-                                      {vehicles.map((vehicle) => (
-                                        <SelectItem key={vehicle.id} value={vehicle.id}>
-                                          {vehicle.registrationNumber}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
+                                    onChange={(val) => updateAssignment(assignment.id, "vehicleId", val)}
+                                    onSelect={(option) => {
+                                      updateAssignmentSelectedOption(assignment.id, "vehicle", option);
+                                      updateAssignment(assignment.id, "vehicleId", option?.value || "none");
+                                    }}
+                                    fetchOptions={fetchVehicles}
+                                    placeholder="Wyszukaj pojazd..."
+                                    selectedOption={assignmentSelectedOptions[assignment.id]?.vehicle || null}
+                                  />
                                 </div>
 
                                 <div className="space-y-2">
                                   <Label>Naczepa</Label>
-                                  <Select
+                                  <AutocompleteInput
                                     value={assignment.trailerId}
-                                    onValueChange={(value) =>
-                                      updateAssignment(assignment.id, "trailerId", value)
-                                    }
-                                  >
-                                    <SelectTrigger>
-                                      <SelectValue placeholder="Wybierz naczepę" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="none">Nieprzypisana</SelectItem>
-                                      {trailers.map((trailer) => (
-                                        <SelectItem key={trailer.id} value={trailer.id}>
-                                          {trailer.registrationNumber}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
+                                    onChange={(val) => updateAssignment(assignment.id, "trailerId", val)}
+                                    onSelect={(option) => {
+                                      updateAssignmentSelectedOption(assignment.id, "trailer", option);
+                                      updateAssignment(assignment.id, "trailerId", option?.value || "none");
+                                    }}
+                                    fetchOptions={fetchTrailers}
+                                    placeholder="Wyszukaj naczepę..."
+                                    selectedOption={assignmentSelectedOptions[assignment.id]?.trailer || null}
+                                  />
                                 </div>
                               </div>
 

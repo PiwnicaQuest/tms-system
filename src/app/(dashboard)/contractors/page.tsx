@@ -118,6 +118,10 @@ const initialFormData = {
   city: "",
   postalCode: "",
   country: "PL",
+  corrAddress: "",
+  corrCity: "",
+  corrPostalCode: "",
+  corrCountry: "",
   phone: "",
   email: "",
   website: "",
@@ -671,6 +675,56 @@ function ContractorsPageContent() {
                     value={formData.city}
                     onChange={handleFormChange}
                     placeholder="Warszawa"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Correspondence Address */}
+            <div className="space-y-4">
+              <h3 className="font-semibold">Adres korespondencyjny</h3>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2 md:col-span-2">
+                  <Label htmlFor="corrAddress">Ulica i numer</Label>
+                  <Input
+                    id="corrAddress"
+                    name="corrAddress"
+                    value={formData.corrAddress}
+                    onChange={handleFormChange}
+                    placeholder="ul. Przykladowa 123"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="corrPostalCode">Kod pocztowy</Label>
+                  <Input
+                    id="corrPostalCode"
+                    name="corrPostalCode"
+                    value={formData.corrPostalCode}
+                    onChange={handleFormChange}
+                    placeholder="00-000"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="corrCity">Miasto</Label>
+                  <Input
+                    id="corrCity"
+                    name="corrCity"
+                    value={formData.corrCity}
+                    onChange={handleFormChange}
+                    placeholder="Warszawa"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="corrCountry">Kraj</Label>
+                  <Input
+                    id="corrCountry"
+                    name="corrCountry"
+                    value={formData.corrCountry}
+                    onChange={handleFormChange}
+                    placeholder="PL"
                   />
                 </div>
               </div>

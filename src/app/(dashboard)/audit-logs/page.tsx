@@ -20,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { AutocompleteInput, AutocompleteOption, fetchUsers } from "@/components/ui/autocomplete-input";
 import {
   Table,
   TableBody,
@@ -102,12 +103,6 @@ interface AuditLogsResponse {
   };
 }
 
-interface UserOption {
-  id: string;
-  name: string | null;
-  email: string;
-}
-
 // Polish labels
 const actionLabels: Record<AuditAction, string> = {
   CREATE: "Utworzenie",
@@ -170,8 +165,8 @@ function AuditLogsPageContent() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
-  // Users for filter
-  const [users, setUsers] = useState<UserOption[]>([]);
+  // User autocomplete state
+  const [selectedUser, setSelectedUser] = useState<AutocompleteOption | null>(null);
 
   // Fetch logs
   const fetchLogs = useCallback(async () => {
@@ -206,22 +201,6 @@ function AuditLogsPageContent() {
     }
   }, [pagination.page, pagination.limit, action, entityType, userId, dateFrom, dateTo]);
 
-  // Fetch users for filter
-  useEffect(() => {
-    const fetchUsers = async () => {
-      try {
-        const response = await fetch("/api/users?limit=100");
-        if (response.ok) {
-          const data = await response.json();
-          setUsers(data.data || []);
-        }
-      } catch (error) {
-        console.error("Error fetching users:", error);
-      }
-    };
-    fetchUsers();
-  }, []);
-
   // Fetch logs on mount and filter change
   useEffect(() => {
     fetchLogs();
@@ -232,6 +211,7 @@ function AuditLogsPageContent() {
     setAction("");
     setEntityType("");
     setUserId("");
+    setSelectedUser(null);
     setDateFrom("");
     setDateTo("");
     setPagination((prev) => ({ ...prev, page: 1 }));
@@ -401,19 +381,17 @@ function AuditLogsPageContent() {
 
                 <div className="space-y-2">
                   <Label>Uzytkownik</Label>
-                  <Select value={userId} onValueChange={setUserId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Wszyscy" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Wszyscy</SelectItem>
-                      {users.map((user) => (
-                        <SelectItem key={user.id} value={user.id}>
-                          {user.name || user.email}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <AutocompleteInput
+                    value={userId}
+                    onChange={(val) => setUserId(val)}
+                    onSelect={(option) => {
+                      setSelectedUser(option);
+                      setUserId(option?.value || "");
+                    }}
+                    fetchOptions={fetchUsers}
+                    placeholder="Wyszukaj użytkownika..."
+                    selectedOption={selectedUser}
+                  />
                 </div>
 
                 <div className="space-y-2">

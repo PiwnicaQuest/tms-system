@@ -54,6 +54,12 @@ import {
   ChevronRight,
   X,
 } from "lucide-react";
+import {
+  AutocompleteInput,
+  AutocompleteOption,
+  fetchDrivers,
+  fetchVehicles,
+} from "@/components/ui/autocomplete-input";
 
 // Order status type
 type OrderStatus =
@@ -137,17 +143,6 @@ interface OrdersResponse {
   };
 }
 
-interface Driver {
-  id: string;
-  firstName: string;
-  lastName: string;
-}
-
-interface Vehicle {
-  id: string;
-  registrationNumber: string;
-}
-
 function OrdersPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -166,16 +161,16 @@ function OrdersPageContent() {
   const [showFilters, setShowFilters] = useState(false);
   const [search, setSearch] = useState(searchParams.get("search") || "");
   const [status, setStatus] = useState(searchParams.get("status") || "all");
-  const [driverId, setDriverId] = useState(searchParams.get("driverId") || "all");
-  const [vehicleId, setVehicleId] = useState(
-    searchParams.get("vehicleId") || "all"
-  );
+  const [driverId, setDriverId] = useState(searchParams.get("driverId") || "");
+  const [vehicleId, setVehicleId] = useState(searchParams.get("vehicleId") || "");
   const [dateFrom, setDateFrom] = useState(searchParams.get("dateFrom") || "");
   const [dateTo, setDateTo] = useState(searchParams.get("dateTo") || "");
 
-  // Resources for filters
-  const [drivers, setDrivers] = useState<Driver[]>([]);
-  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  // Autocomplete state for driver and vehicle
+  const [selectedDriver, setSelectedDriver] = useState<AutocompleteOption | null>(null);
+  const [selectedVehicle, setSelectedVehicle] = useState<AutocompleteOption | null>(null);
+  const [driverInputValue, setDriverInputValue] = useState("");
+  const [vehicleInputValue, setVehicleInputValue] = useState("");
 
   // Fetch orders
   const fetchOrders = useCallback(async () => {
@@ -186,8 +181,8 @@ function OrdersPageContent() {
       params.set("limit", pagination.limit.toString());
       if (search) params.set("search", search);
       if (status && status !== "all") params.set("status", status);
-      if (driverId && driverId !== "all") params.set("driverId", driverId);
-      if (vehicleId && vehicleId !== "all") params.set("vehicleId", vehicleId);
+      if (driverId) params.set("driverId", driverId);
+      if (vehicleId) params.set("vehicleId", vehicleId);
       if (dateFrom) params.set("dateFrom", dateFrom);
       if (dateTo) params.set("dateTo", dateTo);
 
@@ -204,32 +199,6 @@ function OrdersPageContent() {
     }
   }, [pagination.page, pagination.limit, search, status, driverId, vehicleId, dateFrom, dateTo]);
 
-  // Fetch drivers and vehicles for filters
-  useEffect(() => {
-    const fetchResources = async () => {
-      try {
-        const [driversRes, vehiclesRes] = await Promise.all([
-          fetch("/api/drivers?limit=100"),
-          fetch("/api/vehicles?limit=100"),
-        ]);
-
-        if (driversRes.ok) {
-          const data = await driversRes.json();
-          setDrivers(data.data || []);
-        }
-
-        if (vehiclesRes.ok) {
-          const data = await vehiclesRes.json();
-          setVehicles(data.data || []);
-        }
-      } catch (error) {
-        console.error("Error fetching resources:", error);
-      }
-    };
-
-    fetchResources();
-  }, []);
-
   // Fetch orders on mount and filter change
   useEffect(() => {
     fetchOrders();
@@ -242,12 +211,28 @@ function OrdersPageContent() {
     fetchOrders();
   };
 
+  // Handle driver selection
+  const handleDriverSelect = (option: AutocompleteOption | null) => {
+    setSelectedDriver(option);
+    setDriverId(option?.value || "");
+  };
+
+  // Handle vehicle selection
+  const handleVehicleSelect = (option: AutocompleteOption | null) => {
+    setSelectedVehicle(option);
+    setVehicleId(option?.value || "");
+  };
+
   // Clear filters
   const clearFilters = () => {
     setSearch("");
     setStatus("all");
-    setDriverId("all");
-    setVehicleId("all");
+    setDriverId("");
+    setVehicleId("");
+    setSelectedDriver(null);
+    setSelectedVehicle(null);
+    setDriverInputValue("");
+    setVehicleInputValue("");
     setDateFrom("");
     setDateTo("");
     setPagination((prev) => ({ ...prev, page: 1 }));
@@ -314,7 +299,7 @@ function OrdersPageContent() {
 
   // Check if filters are active
   const hasActiveFilters =
-    search || (status && status !== "all") || (driverId && driverId !== "all") || (vehicleId && vehicleId !== "all") || dateFrom || dateTo;
+    search || (status && status !== "all") || driverId || vehicleId || dateFrom || dateTo;
 
   return (
     <div className="space-y-6">
@@ -395,36 +380,26 @@ function OrdersPageContent() {
 
                 <div className="space-y-2">
                   <Label>Kierowca</Label>
-                  <Select value={driverId} onValueChange={setDriverId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Wszyscy" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Wszyscy</SelectItem>
-                      {drivers.map((driver) => (
-                        <SelectItem key={driver.id} value={driver.id}>
-                          {driver.firstName} {driver.lastName}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <AutocompleteInput
+                    value={driverInputValue}
+                    onChange={setDriverInputValue}
+                    onSelect={handleDriverSelect}
+                    fetchOptions={fetchDrivers}
+                    placeholder="Wyszukaj kierowce..."
+                    selectedOption={selectedDriver}
+                  />
                 </div>
 
                 <div className="space-y-2">
                   <Label>Pojazd</Label>
-                  <Select value={vehicleId} onValueChange={setVehicleId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Wszystkie" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Wszystkie</SelectItem>
-                      {vehicles.map((vehicle) => (
-                        <SelectItem key={vehicle.id} value={vehicle.id}>
-                          {vehicle.registrationNumber}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <AutocompleteInput
+                    value={vehicleInputValue}
+                    onChange={setVehicleInputValue}
+                    onSelect={handleVehicleSelect}
+                    fetchOptions={fetchVehicles}
+                    placeholder="Wyszukaj pojazd..."
+                    selectedOption={selectedVehicle}
+                  />
                 </div>
 
                 <div className="space-y-2">

@@ -50,6 +50,7 @@ import {
   ChevronRight,
   Download,
   Users,
+  Mail,
 } from "lucide-react";
 import { OrderAssignmentsList } from "@/components/orders/assignments";
 
@@ -153,6 +154,14 @@ interface Order {
     nip: string | null;
     phone: string | null;
     email: string | null;
+    address: string | null;
+    city: string | null;
+    postalCode: string | null;
+    country: string | null;
+    corrAddress: string | null;
+    corrCity: string | null;
+    corrPostalCode: string | null;
+    corrCountry: string | null;
   } | null;
   subcontractor: {
     id: string;
@@ -930,6 +939,36 @@ export default function OrderDetailPage({
                           NIP
                         </span>
                         <p>{order.contractor.nip}</p>
+                      </div>
+                    )}
+                    {(order.contractor.address || order.contractor.city) && (
+                      <div>
+                        <span className="text-muted-foreground text-sm flex items-center gap-1">
+                          <MapPin className="h-3 w-3" />
+                          Adres siedziby
+                        </span>
+                        <p>
+                          {order.contractor.address}
+                          {order.contractor.address && order.contractor.city && ", "}
+                          {order.contractor.postalCode && `${order.contractor.postalCode} `}
+                          {order.contractor.city}
+                          {order.contractor.country && `, ${order.contractor.country}`}
+                        </p>
+                      </div>
+                    )}
+                    {(order.contractor.corrAddress || order.contractor.corrCity) && (
+                      <div>
+                        <span className="text-muted-foreground text-sm flex items-center gap-1">
+                          <Mail className="h-3 w-3" />
+                          Adres korespondencyjny
+                        </span>
+                        <p>
+                          {order.contractor.corrAddress}
+                          {order.contractor.corrAddress && order.contractor.corrCity && ", "}
+                          {order.contractor.corrPostalCode && `${order.contractor.corrPostalCode} `}
+                          {order.contractor.corrCity}
+                          {order.contractor.corrCountry && `, ${order.contractor.corrCountry}`}
+                        </p>
                       </div>
                     )}
                     <div className="flex gap-6">

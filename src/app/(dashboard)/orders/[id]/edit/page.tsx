@@ -473,6 +473,16 @@ export default function EditOrderPage({ params }: PageProps) {
                       />
                     </div>
                     <div className="space-y-2">
+                      <Label htmlFor="originPostalCode">Kod pocztowy</Label>
+                      <Input
+                        id="originPostalCode"
+                        name="originPostalCode"
+                        value={order.originPostalCode || ""}
+                        onChange={handleChange}
+                        placeholder="00-000"
+                      />
+                    </div>
+                    <div className="space-y-2">
                       <Label htmlFor="originCountry">Kraj</Label>
                       <Select value={order.originCountry} onValueChange={(v) => handleSelectChange("originCountry", v)}>
                         <SelectTrigger><SelectValue /></SelectTrigger>
@@ -612,6 +622,16 @@ export default function EditOrderPage({ params }: PageProps) {
                         value={order.destinationCity || ""}
                         onChange={handleChange}
                         placeholder="Miasto"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="destinationPostalCode">Kod pocztowy</Label>
+                      <Input
+                        id="destinationPostalCode"
+                        name="destinationPostalCode"
+                        value={order.destinationPostalCode || ""}
+                        onChange={handleChange}
+                        placeholder="00-000"
                       />
                     </div>
                     <div className="space-y-2">

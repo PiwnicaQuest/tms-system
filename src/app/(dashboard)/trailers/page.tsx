@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
   TableBody,
@@ -47,6 +48,7 @@ import {
   Pencil,
   Trash2,
   RefreshCw,
+  RotateCcw,
 } from "lucide-react";
 
 type TrailerStatus = "ACTIVE" | "IN_SERVICE" | "INACTIVE" | "SOLD";
@@ -89,6 +91,7 @@ interface Trailer {
   status: TrailerStatus;
   adrClasses: string | null;
   notes?: string | null;
+  isActive: boolean;
 }
 
 interface TrailersResponse {
@@ -123,6 +126,12 @@ export default function TrailersPage() {
     total: 0,
     totalPages: 0,
   });
+
+  // Tab state
+  const [activeTab, setActiveTab] = useState<"active" | "inactive">("active");
+  const [activeCounts, setActiveCounts] = useState({ active: 0, inactive: 0 });
+
+  // Filter state
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
@@ -134,12 +143,31 @@ export default function TrailersPage() {
   const [formLoading, setFormLoading] = useState(false);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
+  // Fetch counts for tabs
+  const fetchCounts = useCallback(async () => {
+    try {
+      const [activeRes, inactiveRes] = await Promise.all([
+        fetch("/api/trailers?limit=1&isActive=true"),
+        fetch("/api/trailers?limit=1&isActive=false"),
+      ]);
+      const activeData = await activeRes.json();
+      const inactiveData = await inactiveRes.json();
+      setActiveCounts({
+        active: activeData.pagination?.total || 0,
+        inactive: inactiveData.pagination?.total || 0,
+      });
+    } catch (error) {
+      console.error("Error fetching counts:", error);
+    }
+  }, []);
+
   const fetchTrailers = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
       params.set("page", pagination.page.toString());
       params.set("limit", pagination.limit.toString());
+      params.set("isActive", activeTab === "active" ? "true" : "false");
       if (search) params.set("search", search);
       if (statusFilter && statusFilter !== "all") params.set("status", statusFilter);
       if (typeFilter && typeFilter !== "all") params.set("type", typeFilter);
@@ -155,11 +183,21 @@ export default function TrailersPage() {
     } finally {
       setLoading(false);
     }
-  }, [pagination.page, pagination.limit, search, statusFilter, typeFilter]);
+  }, [pagination.page, pagination.limit, search, statusFilter, typeFilter, activeTab]);
 
   useEffect(() => {
     fetchTrailers();
   }, [fetchTrailers]);
+
+  useEffect(() => {
+    fetchCounts();
+  }, [fetchCounts]);
+
+  // Handle tab change
+  const handleTabChange = (value: string) => {
+    setActiveTab(value as "active" | "inactive");
+    setPagination((prev) => ({ ...prev, page: 1 }));
+  };
 
   // Open dialog for new trailer
   const handleNew = () => {
@@ -203,9 +241,35 @@ export default function TrailersPage() {
       }
 
       fetchTrailers();
+      fetchCounts();
     } catch (error) {
       console.error("Error deleting trailer:", error);
       alert("Wystąpił błąd podczas usuwania naczepy");
+    }
+  };
+
+  // Handle restore
+  const handleRestore = async (id: string) => {
+    if (!confirm("Czy na pewno chcesz przywrócić tę naczepę?")) return;
+
+    try {
+      const response = await fetch(`/api/trailers/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: true, status: "ACTIVE" }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        alert(data.error || "Wystąpił błąd podczas przywracania naczepy");
+        return;
+      }
+
+      fetchTrailers();
+      fetchCounts();
+    } catch (error) {
+      console.error("Error restoring trailer:", error);
+      alert("Wystąpił błąd podczas przywracania naczepy");
     }
   };
 
@@ -252,6 +316,7 @@ export default function TrailersPage() {
 
       setShowDialog(false);
       fetchTrailers();
+      fetchCounts();
     } catch (error) {
       console.error("Error saving trailer:", error);
       alert("Wystąpił błąd podczas zapisywania naczepy");
@@ -265,6 +330,156 @@ export default function TrailersPage() {
     active: trailers.filter((t) => t.status === "ACTIVE").length,
     inService: trailers.filter((t) => t.status === "IN_SERVICE").length,
   };
+
+  // Render trailer table
+  const renderTrailerTable = () => (
+    <>
+      {loading ? (
+        <div className="flex items-center justify-center py-8">
+          <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      ) : trailers.length === 0 ? (
+        <div className="text-center py-8 text-muted-foreground">
+          <Container className="h-12 w-12 mx-auto mb-4 opacity-50" />
+          <p>
+            {activeTab === "active"
+              ? "Nie znaleziono aktywnych naczep"
+              : "Brak nieaktywnych naczep"}
+          </p>
+        </div>
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Nr rejestracyjny</TableHead>
+              <TableHead>Typ</TableHead>
+              <TableHead>Marka</TableHead>
+              <TableHead>Rok</TableHead>
+              <TableHead>Ładowność</TableHead>
+              <TableHead>Pojemność</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>ADR</TableHead>
+              <TableHead className="w-[50px]"></TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {trailers.map((trailer) => (
+              <TableRow key={trailer.id} className={!trailer.isActive ? "opacity-60" : ""}>
+                <TableCell>
+                  <Link
+                    href={`/trailers/${trailer.id}`}
+                    className="font-mono font-medium hover:underline"
+                  >
+                    {trailer.registrationNumber}
+                  </Link>
+                </TableCell>
+                <TableCell>
+                  <Badge variant="outline">{typeLabels[trailer.type]}</Badge>
+                </TableCell>
+                <TableCell>{trailer.brand || "-"}</TableCell>
+                <TableCell>{trailer.year || "-"}</TableCell>
+                <TableCell>
+                  {trailer.loadCapacity
+                    ? `${trailer.loadCapacity.toLocaleString("pl-PL")} kg`
+                    : "-"}
+                </TableCell>
+                <TableCell>
+                  {trailer.volume ? `${trailer.volume} m³` : "-"}
+                </TableCell>
+                <TableCell>
+                  <Badge
+                    variant="secondary"
+                    className={`${statusColors[trailer.status]} text-white`}
+                  >
+                    {statusLabels[trailer.status]}
+                  </Badge>
+                </TableCell>
+                <TableCell>
+                  {trailer.adrClasses ? (
+                    <Badge variant="destructive" className="text-xs">
+                      ADR
+                    </Badge>
+                  ) : (
+                    "-"
+                  )}
+                </TableCell>
+                <TableCell>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon">
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem asChild>
+                        <Link href={`/trailers/${trailer.id}`}>
+                          <Eye className="mr-2 h-4 w-4" />
+                          Szczegóły
+                        </Link>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleEdit(trailer)}>
+                        <Pencil className="mr-2 h-4 w-4" />
+                        Edytuj
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      {activeTab === "active" ? (
+                        <DropdownMenuItem
+                          className="text-red-600"
+                          onClick={() => handleDelete(trailer.id)}
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Usuń
+                        </DropdownMenuItem>
+                      ) : (
+                        <DropdownMenuItem
+                          onClick={() => handleRestore(trailer.id)}
+                          className="text-emerald-600"
+                        >
+                          <RotateCcw className="mr-2 h-4 w-4" />
+                          Przywróć
+                        </DropdownMenuItem>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+
+      {/* Pagination */}
+      {pagination.totalPages > 1 && (
+        <div className="flex items-center justify-between mt-4">
+          <p className="text-sm text-muted-foreground">
+            Strona {pagination.page} z {pagination.totalPages}
+          </p>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                setPagination((prev) => ({ ...prev, page: prev.page - 1 }))
+              }
+              disabled={pagination.page <= 1}
+            >
+              Poprzednia
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                setPagination((prev) => ({ ...prev, page: prev.page + 1 }))
+              }
+              disabled={pagination.page >= pagination.totalPages}
+            >
+              Następna
+            </Button>
+          </div>
+        </div>
+      )}
+    </>
+  );
 
   return (
     <div className="space-y-6">
@@ -292,7 +507,7 @@ export default function TrailersPage() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm text-muted-foreground">
@@ -300,7 +515,7 @@ export default function TrailersPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{stats.total}</p>
+            <p className="text-2xl font-bold">{activeCounts.active + activeCounts.inactive}</p>
           </CardContent>
         </Card>
         <Card>
@@ -311,7 +526,7 @@ export default function TrailersPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{stats.active}</p>
+            <p className="text-2xl font-bold">{activeCounts.active}</p>
           </CardContent>
         </Card>
         <Card>
@@ -325,195 +540,138 @@ export default function TrailersPage() {
             <p className="text-2xl font-bold">{stats.inService}</p>
           </CardContent>
         </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-muted-foreground flex items-center gap-2">
+              <div className="h-2 w-2 rounded-full bg-slate-500" />
+              Nieaktywne
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold">{activeCounts.inactive}</p>
+          </CardContent>
+        </Card>
       </div>
 
-      {/* Filters */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex flex-wrap gap-4">
-            <div className="flex-1 min-w-[200px]">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder="Szukaj po nr rejestracyjnym..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="pl-9"
-                />
-              </div>
-            </div>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[180px]">
-                <Filter className="mr-2 h-4 w-4" />
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Wszystkie</SelectItem>
-                {Object.entries(statusLabels).map(([key, label]) => (
-                  <SelectItem key={key} value={key}>
-                    {label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={typeFilter} onValueChange={setTypeFilter}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Typ" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Wszystkie</SelectItem>
-                {Object.entries(typeLabels).map(([key, label]) => (
-                  <SelectItem key={key} value={key}>
-                    {label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={handleTabChange}>
+        <TabsList>
+          <TabsTrigger value="active">
+            Aktywne ({activeCounts.active})
+          </TabsTrigger>
+          <TabsTrigger value="inactive">
+            Nieaktywne ({activeCounts.inactive})
+          </TabsTrigger>
+        </TabsList>
 
-      {/* Trailers Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Lista naczep</CardTitle>
-          <CardDescription>
-            Znaleziono {pagination.total} naczep
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="flex items-center justify-center py-8">
-              <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
-          ) : trailers.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              <Container className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p>Nie znaleziono naczep</p>
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Nr rejestracyjny</TableHead>
-                  <TableHead>Typ</TableHead>
-                  <TableHead>Marka</TableHead>
-                  <TableHead>Rok</TableHead>
-                  <TableHead>Ładowność</TableHead>
-                  <TableHead>Pojemność</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>ADR</TableHead>
-                  <TableHead className="w-[50px]"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {trailers.map((trailer) => (
-                  <TableRow key={trailer.id}>
-                    <TableCell>
-                      <Link
-                        href={`/trailers/${trailer.id}`}
-                        className="font-mono font-medium hover:underline"
-                      >
-                        {trailer.registrationNumber}
-                      </Link>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{typeLabels[trailer.type]}</Badge>
-                    </TableCell>
-                    <TableCell>{trailer.brand || "-"}</TableCell>
-                    <TableCell>{trailer.year || "-"}</TableCell>
-                    <TableCell>
-                      {trailer.loadCapacity
-                        ? `${trailer.loadCapacity.toLocaleString("pl-PL")} kg`
-                        : "-"}
-                    </TableCell>
-                    <TableCell>
-                      {trailer.volume ? `${trailer.volume} m³` : "-"}
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant="secondary"
-                        className={`${statusColors[trailer.status]} text-white`}
-                      >
-                        {statusLabels[trailer.status]}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {trailer.adrClasses ? (
-                        <Badge variant="destructive" className="text-xs">
-                          ADR
-                        </Badge>
-                      ) : (
-                        "-"
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem asChild>
-                            <Link href={`/trailers/${trailer.id}`}>
-                              <Eye className="mr-2 h-4 w-4" />
-                              Szczegóły
-                            </Link>
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleEdit(trailer)}>
-                            <Pencil className="mr-2 h-4 w-4" />
-                            Edytuj
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            className="text-red-600"
-                            onClick={() => handleDelete(trailer.id)}
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Usuń
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-
-          {/* Pagination */}
-          {pagination.totalPages > 1 && (
-            <div className="flex items-center justify-between mt-4">
-              <p className="text-sm text-muted-foreground">
-                Strona {pagination.page} z {pagination.totalPages}
-              </p>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    setPagination((prev) => ({ ...prev, page: prev.page - 1 }))
-                  }
-                  disabled={pagination.page <= 1}
-                >
-                  Poprzednia
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    setPagination((prev) => ({ ...prev, page: prev.page + 1 }))
-                  }
-                  disabled={pagination.page >= pagination.totalPages}
-                >
-                  Następna
-                </Button>
+        <TabsContent value="active" className="space-y-4">
+          {/* Filters */}
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex flex-wrap gap-4">
+                <div className="flex-1 min-w-[200px]">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      placeholder="Szukaj po nr rejestracyjnym..."
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      className="pl-9"
+                    />
+                  </div>
+                </div>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-[180px]">
+                    <Filter className="mr-2 h-4 w-4" />
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Wszystkie</SelectItem>
+                    {Object.entries(statusLabels).map(([key, label]) => (
+                      <SelectItem key={key} value={key}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={typeFilter} onValueChange={setTypeFilter}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="Typ" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Wszystkie</SelectItem>
+                    {Object.entries(typeLabels).map(([key, label]) => (
+                      <SelectItem key={key} value={key}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+            </CardContent>
+          </Card>
+
+          {/* Trailers Table */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Aktywne naczepy</CardTitle>
+              <CardDescription>
+                Znaleziono {pagination.total} naczep
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {renderTrailerTable()}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="inactive" className="space-y-4">
+          {/* Filters */}
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex flex-wrap gap-4">
+                <div className="flex-1 min-w-[200px]">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      placeholder="Szukaj po nr rejestracyjnym..."
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      className="pl-9"
+                    />
+                  </div>
+                </div>
+                <Select value={typeFilter} onValueChange={setTypeFilter}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="Typ" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Wszystkie</SelectItem>
+                    {Object.entries(typeLabels).map(([key, label]) => (
+                      <SelectItem key={key} value={key}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Trailers Table */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Nieaktywne naczepy</CardTitle>
+              <CardDescription>
+                Znaleziono {pagination.total} naczep
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {renderTrailerTable()}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
       {/* Add/Edit Dialog */}
       <Dialog open={showDialog} onOpenChange={setShowDialog}>

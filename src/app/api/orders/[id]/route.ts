@@ -184,9 +184,11 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         origin: body.origin ?? existingOrder.origin,
         originCity: body.originCity,
         originCountry: body.originCountry ?? "PL",
+        originPostalCode: body.originPostalCode,
         destination: body.destination ?? existingOrder.destination,
         destinationCity: body.destinationCity,
         destinationCountry: body.destinationCountry ?? "PL",
+        destinationPostalCode: body.destinationPostalCode,
         distanceKm: body.distanceKm ? parseFloat(body.distanceKm) : null,
         loadingDate: body.loadingDate
           ? new Date(body.loadingDate)

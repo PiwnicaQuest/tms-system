@@ -405,9 +405,11 @@ model Order {
   origin             String
   originCity         String?
   originCountry      String @default("PL")
+  originPostalCode   String?
   destination        String
   destinationCity    String?
   destinationCountry String @default("PL")
+  destinationPostalCode String?
   distanceKm         Float?
 
   // Dates
@@ -512,6 +514,7 @@ model Waypoint {
   type         WaypointType
   address      String
   city         String?
+  postalCode   String?
   country      String   @default("PL")
 
   scheduledDate DateTime?
@@ -908,6 +911,12 @@ model Contractor {
   city         String?
   postalCode   String?
   country      String @default("PL")
+
+  // Adres korespondencyjny
+  corrAddress    String?
+  corrCity       String?
+  corrPostalCode String?
+  corrCountry    String?
 
   phone        String?
   email        String?

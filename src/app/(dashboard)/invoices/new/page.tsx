@@ -53,6 +53,7 @@ import {
   Calendar,
   CreditCard,
 } from "lucide-react";
+import { AutocompleteInput, AutocompleteOption, fetchContractors } from "@/components/ui/autocomplete-input";
 
 // VAT rates
 const VAT_RATES = [
@@ -127,8 +128,9 @@ const defaultItem = {
 export default function NewInvoicePage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
-  const [contractors, setContractors] = useState<Contractor[]>([]);
-  const [loadingContractors, setLoadingContractors] = useState(true);
+  const [contractorSearch, setContractorSearch] = useState("");
+  const [selectedContractor, setSelectedContractor] = useState<AutocompleteOption | null>(null);
+  const [contractorDetails, setContractorDetails] = useState<Contractor | null>(null);
 
   // Get today's date and default due date (14 days)
   const today = new Date().toISOString().split("T")[0];
@@ -161,39 +163,41 @@ export default function NewInvoicePage() {
   const watchedItems = form.watch("items");
   const watchedContractorId = form.watch("contractorId");
 
-  // Fetch contractors
+  // Fetch contractor details when selected
   useEffect(() => {
-    const fetchContractors = async () => {
+    const fetchContractorDetails = async () => {
+      if (!watchedContractorId) {
+        setContractorDetails(null);
+        return;
+      }
+
       try {
-        const response = await fetch("/api/contractors?limit=200&type=CLIENT");
+        const response = await fetch(`/api/contractors/${watchedContractorId}`);
         if (response.ok) {
           const data = await response.json();
-          setContractors(data.data || []);
+          setContractorDetails(data);
+
+          // Update due date based on contractor's payment days
+          const issueDate = form.getValues("issueDate");
+          if (issueDate && data.paymentDays) {
+            const dueDate = new Date(issueDate);
+            dueDate.setDate(dueDate.getDate() + data.paymentDays);
+            form.setValue("dueDate", dueDate.toISOString().split("T")[0]);
+          }
         }
       } catch (error) {
-        console.error("Error fetching contractors:", error);
-      } finally {
-        setLoadingContractors(false);
+        console.error("Error fetching contractor details:", error);
       }
     };
 
-    fetchContractors();
-  }, []);
+    fetchContractorDetails();
+  }, [watchedContractorId, form]);
 
-  // Update due date when contractor changes
-  useEffect(() => {
-    if (watchedContractorId) {
-      const contractor = contractors.find((c) => c.id === watchedContractorId);
-      if (contractor) {
-        const issueDate = form.getValues("issueDate");
-        if (issueDate) {
-          const dueDate = new Date(issueDate);
-          dueDate.setDate(dueDate.getDate() + contractor.paymentDays);
-          form.setValue("dueDate", dueDate.toISOString().split("T")[0]);
-        }
-      }
-    }
-  }, [watchedContractorId, contractors, form]);
+  // Handle contractor selection
+  const handleContractorSelect = (option: AutocompleteOption | null) => {
+    setSelectedContractor(option);
+    form.setValue("contractorId", option?.value || "", { shouldValidate: true });
+  };
 
   // Calculate item totals
   const calculateItemTotals = (item: typeof defaultItem) => {
@@ -260,9 +264,6 @@ export default function NewInvoicePage() {
     }
   };
 
-  // Get selected contractor
-  const selectedContractor = contractors.find((c) => c.id === watchedContractorId);
-
   return (
     <div className="space-y-6">
       {/* Page Header */}
@@ -321,44 +322,36 @@ export default function NewInvoicePage() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Kontrahent *</FormLabel>
-                        <Select
-                          onValueChange={field.onChange}
-                          defaultValue={field.value}
-                          disabled={loadingContractors}
-                        >
-                          <FormControl>
-                            <SelectTrigger className={form.formState.errors.contractorId ? "border-destructive" : ""}>
-                              <SelectValue placeholder="Wybierz kontrahenta" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {contractors.map((contractor) => (
-                              <SelectItem key={contractor.id} value={contractor.id}>
-                                {contractor.shortName || contractor.name}
-                                {contractor.nip && ` (NIP: ${contractor.nip})`}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <FormControl>
+                          <AutocompleteInput
+                            value={contractorSearch}
+                            onChange={setContractorSearch}
+                            onSelect={handleContractorSelect}
+                            fetchOptions={fetchContractors}
+                            placeholder="Wyszukaj kontrahenta..."
+                            selectedOption={selectedContractor}
+                            error={!!form.formState.errors.contractorId}
+                          />
+                        </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
 
-                  {selectedContractor && (
+                  {contractorDetails && (
                     <div className="p-4 bg-muted rounded-lg">
-                      <p className="font-medium">{selectedContractor.name}</p>
-                      {selectedContractor.nip && (
-                        <p className="text-sm text-muted-foreground">NIP: {selectedContractor.nip}</p>
+                      <p className="font-medium">{contractorDetails.name}</p>
+                      {contractorDetails.nip && (
+                        <p className="text-sm text-muted-foreground">NIP: {contractorDetails.nip}</p>
                       )}
-                      {selectedContractor.address && (
+                      {contractorDetails.address && (
                         <p className="text-sm text-muted-foreground">
-                          {selectedContractor.address}
-                          {selectedContractor.city && `, ${selectedContractor.city}`}
+                          {contractorDetails.address}
+                          {contractorDetails.city && `, ${contractorDetails.city}`}
                         </p>
                       )}
                       <p className="text-sm text-muted-foreground mt-1">
-                        Termin platnosci: {selectedContractor.paymentDays} dni
+                        Termin platnosci: {contractorDetails.paymentDays} dni
                       </p>
                     </div>
                   )}
