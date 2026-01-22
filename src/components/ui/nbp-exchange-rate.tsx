@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, RefreshCw, AlertCircle, TrendingUp, Info } from "lucide-react";
+import { Loader2, RefreshCw, AlertCircle, TrendingUp } from "lucide-react";
 
 interface NbpRateData {
   currency: string;
@@ -17,17 +17,19 @@ interface NbpRateData {
   tableNumber: string;
 }
 
+interface ExchangeRateResult {
+  rate: number;
+  date: string;
+  table: string;
+  amountInPLN: number;
+}
+
 interface NbpExchangeRateProps {
   currency: string;
   amount: number;
   saleDate?: string;
   issueDate?: string;
-  onRateChange?: (rateData: {
-    rate: number;
-    date: string;
-    table: string;
-    amountInPLN: number;
-  } | null) => void;
+  onRateChange?: (rateData: ExchangeRateResult | null) => void;
 }
 
 // Format amount helper
@@ -50,21 +52,16 @@ const formatRate = (rate: number) => {
 
 /**
  * Calculate the default rate date based on sale date or issue date
- * According to Polish VAT regulations, the rate should be from the last business day
- * before the tax obligation date (usually sale date or issue date)
  */
 function getDefaultRateDate(saleDate?: string, issueDate?: string): string {
-  // Use sale date if available, otherwise use issue date
   const baseDate = saleDate || issueDate;
   
   if (!baseDate) {
-    // Default to yesterday
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     return yesterday.toISOString().split("T")[0];
   }
   
-  // Go back one day from the base date
   const date = new Date(baseDate);
   date.setDate(date.getDate() - 1);
   
@@ -78,12 +75,18 @@ export function NbpExchangeRate({
   issueDate,
   onRateChange,
 }: NbpExchangeRateProps) {
-  const [rateDate, setRateDate] = useState<string>(
+  const [rateDate, setRateDate] = useState<string>(() => 
     getDefaultRateDate(saleDate, issueDate)
   );
   const [rateData, setRateData] = useState<NbpRateData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Use ref for callback to avoid infinite loops
+  const onRateChangeRef = useRef(onRateChange);
+  useEffect(() => {
+    onRateChangeRef.current = onRateChange;
+  }, [onRateChange]);
 
   // Update rate date when sale date or issue date changes
   useEffect(() => {
@@ -91,11 +94,10 @@ export function NbpExchangeRate({
     setRateDate(newDefaultDate);
   }, [saleDate, issueDate]);
 
-  // Fetch rate from API
+  // Fetch rate from API - only depends on currency and date
   const fetchRate = useCallback(async () => {
     if (!currency || currency === "PLN" || !rateDate) {
       setRateData(null);
-      onRateChange?.(null);
       return;
     }
 
@@ -118,29 +120,35 @@ export function NbpExchangeRate({
 
       const data: NbpRateData = await response.json();
       setRateData(data);
-      
-      // Calculate amount in PLN and notify parent
-      const amountInPLN = amount * data.rate;
-      onRateChange?.({
-        rate: data.rate,
-        date: data.date,
-        table: data.tableNumber,
-        amountInPLN,
-      });
+      setError(null);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Wystapil blad";
       setError(message);
       setRateData(null);
-      onRateChange?.(null);
     } finally {
       setLoading(false);
     }
-  }, [currency, rateDate, amount, onRateChange]);
+  }, [currency, rateDate]);
 
-  // Fetch rate when dependencies change
+  // Fetch rate when currency or date changes
   useEffect(() => {
     fetchRate();
   }, [fetchRate]);
+
+  // Notify parent when rate or amount changes (separate from fetching)
+  useEffect(() => {
+    if (rateData && amount > 0) {
+      const amountInPLN = amount * rateData.rate;
+      onRateChangeRef.current?.({
+        rate: rateData.rate,
+        date: rateData.date,
+        table: rateData.tableNumber,
+        amountInPLN,
+      });
+    } else if (!rateData) {
+      onRateChangeRef.current?.(null);
+    }
+  }, [rateData, amount]);
 
   // Don't render for PLN
   if (!currency || currency === "PLN") {
@@ -177,8 +185,9 @@ export function NbpExchangeRate({
             type="button"
             variant="outline"
             size="icon"
-            onClick={fetchRate}
+            onClick={() => fetchRate()}
             disabled={loading}
+            title="Odswiez kurs"
           >
             {loading ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -197,7 +206,7 @@ export function NbpExchangeRate({
         )}
 
         {/* Loading state */}
-        {loading && !rateData && (
+        {loading && (
           <div className="flex items-center justify-center py-4">
             <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
             <span className="ml-2 text-sm text-muted-foreground">
@@ -227,24 +236,26 @@ export function NbpExchangeRate({
             </div>
 
             {/* Conversion result */}
-            <div className="p-3 bg-white rounded-md border">
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-sm text-muted-foreground">
-                  Wartosc brutto:
-                </span>
-                <span className="font-medium">
-                  {formatAmount(amount, currency)}
-                </span>
+            {amount > 0 && (
+              <div className="p-3 bg-white rounded-md border">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-sm text-muted-foreground">
+                    Wartosc brutto:
+                  </span>
+                  <span className="font-medium">
+                    {formatAmount(amount, currency)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center pt-2 border-t">
+                  <span className="text-sm font-medium">
+                    Rownowartość w PLN:
+                  </span>
+                  <Badge variant="secondary" className="text-base font-bold">
+                    {formatAmount(amountInPLN, "PLN")}
+                  </Badge>
+                </div>
               </div>
-              <div className="flex justify-between items-center pt-2 border-t">
-                <span className="text-sm font-medium">
-                  Rownowartość w PLN:
-                </span>
-                <Badge variant="secondary" className="text-base font-bold">
-                  {formatAmount(amountInPLN, "PLN")}
-                </Badge>
-              </div>
-            </div>
+            )}
 
             {/* Info about actual rate date */}
             {rateData.date !== rateDate && (
